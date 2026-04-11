@@ -308,6 +308,7 @@ describe('validateMigrationResult', () => {
       { id: 'n-start', node_type: 'start' },
       { id: 'n-greeting', node_type: 'message' },
       { id: 'n-msg1', node_type: 'message' },
+      { id: 'n-end', node_type: 'end' },
     ]
     const edges = [
       { source_node_id: 'n-start', target_node_id: 'n-greeting', is_fallback: false },

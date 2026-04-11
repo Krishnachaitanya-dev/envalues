@@ -355,7 +355,7 @@ export function validateMigrationResult(
   }
 
   // Node count: should have start + greeting + 1 per qa_pair (at minimum)
-  const expectedMinNodes = originalQAPairCount + 2  // start, greeting
+  const expectedMinNodes = originalQAPairCount + 3  // start, greeting, end
   if (nodes.length < expectedMinNodes) {
     errors.push(`Expected at least ${expectedMinNodes} nodes, got ${nodes.length}`)
   }
