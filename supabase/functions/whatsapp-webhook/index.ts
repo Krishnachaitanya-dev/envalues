@@ -25,12 +25,12 @@ const corsHeaders = {
 
 // ── Tenant lookup ─────────────────────────────────────────────────────────────
 
-async function getOwner(businessNumber: string): Promise<{ id: string; whatsapp_api_token: string; reception_phone: string | null } | null> {
+async function getOwner(businessNumber: string): Promise<{ id: string; whatsapp_api_token: string; whatsapp_phone_number_id: string | null; reception_phone: string | null } | null> {
   const clean = businessNumber.replace(/[\s\-\+\(\)]/g, '')
   for (const num of [clean, `+${clean}`]) {
     const { data } = await supabase
       .from('owners')
-      .select('id, whatsapp_api_token, reception_phone')
+      .select('id, whatsapp_api_token, whatsapp_phone_number_id, reception_phone')
       .eq('whatsapp_business_number', num)
       .single()
     if (data) return data
@@ -110,7 +110,7 @@ async function isDuplicateMessage(messageId: string, ownerId: string): Promise<b
 
 // ── TurnDeps wiring ───────────────────────────────────────────────────────────
 
-function buildTurnDeps(ownerReceptionPhone: string | null): TurnDeps {
+function buildTurnDeps(ownerReceptionPhone: string | null, ownerCreds: { accessToken: string; phoneNumberId: string }): TurnDeps {
   return {
     getNode: async (id) => {
       const { data } = await supabase.from('flow_nodes').select('*').eq('id', id).single()
@@ -137,7 +137,7 @@ function buildTurnDeps(ownerReceptionPhone: string | null): TurnDeps {
 
     enqueueMessages: async (messages, phone) => {
       for (const msg of messages) {
-        await sendWhatsAppMessage(phone, msg)
+        await sendWhatsAppMessage(phone, msg, ownerCreds)
       }
     },
 
@@ -145,7 +145,7 @@ function buildTurnDeps(ownerReceptionPhone: string | null): TurnDeps {
       await sendWhatsAppMessage(ownerPhone, {
         type: 'text',
         text: `New handoff from ${customerPhone}${department ? ` [${department}]` : ''}. Open inbox to reply.`,
-      })
+      }, ownerCreds)
     },
 
     closeSession: async (session) => {
@@ -177,9 +177,8 @@ function buildTurnDeps(ownerReceptionPhone: string | null): TurnDeps {
 
 // ── WhatsApp sender ───────────────────────────────────────────────────────────
 
-async function sendWhatsAppMessage(to: string, msg: OutboundMessage): Promise<void> {
-  const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN')!
-  const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID')!
+async function sendWhatsAppMessage(to: string, msg: OutboundMessage, creds: { accessToken: string; phoneNumberId: string }): Promise<void> {
+  const { accessToken, phoneNumberId } = creds
 
   let payload: Record<string, unknown>
 
@@ -228,7 +227,7 @@ async function verifySignature(body: string, signature: string, appSecret: strin
 
 // ── Main receive_message ──────────────────────────────────────────────────────
 
-async function receiveMessage(ownerId: string, phone: string, rawText: string, messageId: string, receptionPhone: string | null): Promise<void> {
+async function receiveMessage(ownerId: string, phone: string, rawText: string, messageId: string, receptionPhone: string | null, ownerCreds: { accessToken: string; phoneNumberId: string }): Promise<void> {
   // 1. Idempotency — skip if already processed
   try {
     if (await isDuplicateMessage(messageId, ownerId)) return
@@ -262,14 +261,14 @@ async function receiveMessage(ownerId: string, phone: string, rawText: string, m
   if (restart) {
     if (session) await expireSession(session.id)
     const newSession = await createSession(ownerId, phone, restart)
-    const deps = buildTurnDeps(receptionPhone)
+    const deps = buildTurnDeps(receptionPhone, ownerCreds)
     await executeTurn(newSession, text, deps)
     return
   }
 
   // 7. Active session → continue
   if (session?.status === 'active') {
-    const deps = buildTurnDeps(receptionPhone)
+    const deps = buildTurnDeps(receptionPhone, ownerCreds)
     await executeTurn(session, text, deps)
     return
   }
@@ -277,11 +276,11 @@ async function receiveMessage(ownerId: string, phone: string, rawText: string, m
   // 8. No session → trigger resolution
   const trigger = resolveTrigger(triggers, text)
   if (!trigger) {
-    await sendWhatsAppMessage(phone, { type: 'text', text: "Reply 'hi' to get started." })
+    await sendWhatsAppMessage(phone, { type: 'text', text: "Reply 'hi' to get started." }, ownerCreds)
     return
   }
   const newSession = await createSession(ownerId, phone, trigger)
-  const deps = buildTurnDeps(receptionPhone)
+  const deps = buildTurnDeps(receptionPhone, ownerCreds)
   await executeTurn(newSession, text, deps)
 }
 
@@ -353,8 +352,13 @@ serve(async (req: Request) => {
         return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
       }
 
+      const ownerCreds = {
+        accessToken: owner.whatsapp_api_token ?? Deno.env.get('WHATSAPP_ACCESS_TOKEN') ?? '',
+        phoneNumberId: owner.whatsapp_phone_number_id ?? Deno.env.get('WHATSAPP_PHONE_NUMBER_ID') ?? '',
+      }
+
       // Fire-and-forget — WhatsApp needs 200 within 15s
-      receiveMessage(owner.id, customerPhone, rawText, message.id, owner.reception_phone)
+      receiveMessage(owner.id, customerPhone, rawText, message.id, owner.reception_phone, ownerCreds)
         .catch(err => console.error(`[${requestId}] receiveMessage error:`, err))
 
       return new Response(JSON.stringify({ status: 'ok' }), {

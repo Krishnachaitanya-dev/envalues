@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Link2, CreditCard, Loader2, Check, Phone, Key, Eye, EyeOff
+  Link2, CreditCard, Loader2, Check, Phone, Key, Eye, EyeOff, Hash
 } from 'lucide-react'
 import { useDashboard } from '@/contexts/DashboardContext'
 
@@ -50,6 +50,15 @@ export default function SettingsPage() {
                 onChange={handleWhatsappFormChange} className={inputCls + ' pl-10'} placeholder="e.g., 919876543210" />
             </div>
             <p className="text-[10px] text-muted-foreground mt-1.5">Enter your WhatsApp Business phone number with country code (no + or spaces)</p>
+          </div>
+          <div>
+            <label className={labelCls}>WhatsApp Phone Number ID</label>
+            <div className="relative">
+              <Hash size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
+              <input type="text" name="whatsapp_phone_number_id" value={whatsappForm.whatsapp_phone_number_id}
+                onChange={handleWhatsappFormChange} className={inputCls + ' pl-10'} placeholder="e.g., 123456789012345" />
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1.5">Find this in Meta Developer Portal → WhatsApp → API Setup → Phone Number ID</p>
           </div>
           <div>
             <label className={labelCls}>WhatsApp Access Token</label>

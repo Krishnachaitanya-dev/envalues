@@ -49,7 +49,7 @@ export function createMockDashboardContext(overrides: Record<string, unknown> = 
     savingEdit: false,
     handleAddSubOptions: async () => false,
     subscription: null,
-    whatsappForm: { whatsapp_business_number: '', whatsapp_api_token: '' },
+    whatsappForm: { whatsapp_business_number: '', whatsapp_api_token: '', whatsapp_phone_number_id: '' },
     showToken: false,
     setShowToken: () => {},
     handleWhatsappFormChange: () => {},

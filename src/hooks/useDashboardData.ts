@@ -6,6 +6,7 @@ import { z } from 'zod'
 
 export const whatsappSchema = z.object({
   whatsapp_business_number: z.string().min(10, 'Phone number must be at least 10 digits').max(20, 'Phone number too long'),
+  whatsapp_phone_number_id: z.string().min(10, 'Phone Number ID must be at least 10 digits').max(30, 'Phone Number ID too long'),
   whatsapp_api_token: z.string().min(1, 'Access token is required').max(500, 'Token too long'),
 })
 
@@ -28,7 +29,7 @@ export function useDashboardData() {
   const [loading, setLoading] = useState(true)
   const [subscription, setSubscription] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
-  const [whatsappForm, setWhatsappForm] = useState({ whatsapp_business_number: '', whatsapp_api_token: '' })
+  const [whatsappForm, setWhatsappForm] = useState({ whatsapp_business_number: '', whatsapp_api_token: '', whatsapp_phone_number_id: '' })
   const [showToken, setShowToken] = useState(false)
   const [savingWhatsapp, setSavingWhatsapp] = useState(false)
 
@@ -60,12 +61,12 @@ export function useDashboardData() {
       if (!user) { navigate('/login'); return }
       setUser(user)
       const { data: od, error: oe } = await (supabase.from('owners') as any)
-        .select('id, email, full_name, is_active, onboarding_completed, whatsapp_business_number, whatsapp_api_token, created_at, updated_at, plan_type, enterprise_id, brand_name, brand_logo_url, brand_primary_color, max_clients, reception_phone')
+        .select('id, email, full_name, is_active, onboarding_completed, whatsapp_business_number, whatsapp_api_token, whatsapp_phone_number_id, created_at, updated_at, plan_type, enterprise_id, brand_name, brand_logo_url, brand_primary_color, max_clients, reception_phone')
         .eq('id', user.id)
         .single()
       if (oe) throw oe
       setOwnerData(od)
-      setWhatsappForm({ whatsapp_business_number: od.whatsapp_business_number || '', whatsapp_api_token: od.whatsapp_api_token || '' })
+      setWhatsappForm({ whatsapp_business_number: od.whatsapp_business_number || '', whatsapp_api_token: od.whatsapp_api_token || '', whatsapp_phone_number_id: od.whatsapp_phone_number_id ?? '' })
 
       if (od.plan_type === 'enterprise') {
         setIsEnterprise(true)
@@ -97,6 +98,7 @@ export function useDashboardData() {
       const { error } = await supabase.from('owners').update({
         whatsapp_business_number: validated.whatsapp_business_number,
         whatsapp_api_token: validated.whatsapp_api_token,
+        whatsapp_phone_number_id: validated.whatsapp_phone_number_id,
       }).eq('id', user.id)
       if (error) throw error
       setOwnerData({ ...ownerData, ...whatsappForm })
@@ -152,7 +154,7 @@ export function useDashboardData() {
   }
 
   const formatAmount = (amountInPaise: number) => `Rs.${Math.round(amountInPaise / 100)}`
-  const hasWhatsappCreds = !!(ownerData?.whatsapp_business_number?.trim() && ownerData?.whatsapp_api_token?.trim())
+  const hasWhatsappCreds = !!(ownerData?.whatsapp_business_number?.trim() && ownerData?.whatsapp_api_token?.trim() && ownerData?.whatsapp_phone_number_id?.trim())
 
   const handleGoLive = async () => null
   const handleAddMainQuestion = async (e: React.FormEvent) => { e.preventDefault(); return false }
