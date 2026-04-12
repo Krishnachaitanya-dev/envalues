@@ -26,9 +26,17 @@ describe('findRestartTrigger', () => {
     expect(result?.id).toBe('r1')
   })
 
-  it('matches restart trigger on normalized variant (punctuation stripped)', () => {
+  it('matches restart trigger by its stored trigger_value (case-insensitive storage)', () => {
     const result = findRestartTrigger(triggers, 'hello')
     expect(result?.id).toBe('r2')
+  })
+
+  it('normalizes stored trigger_value before comparing (handles mixed-case stored values)', () => {
+    const mixedCaseTriggers = [
+      makeTrigger({ id: 'r_mixed', trigger_type: 'restart', trigger_value: 'Hello', priority: 0 }),
+    ]
+    // caller normalizes input: 'hello' (pre-normalized). stored value 'Hello' must also be normalized before compare
+    expect(findRestartTrigger(mixedCaseTriggers, 'hello')?.id).toBe('r_mixed')
   })
 
   it('returns null when text matches keyword but not restart', () => {

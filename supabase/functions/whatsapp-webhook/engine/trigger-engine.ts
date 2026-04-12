@@ -38,11 +38,14 @@ export function resolveTrigger(triggers: FlowTrigger[], normalizedText: string):
   // Pass 2: keyword exact match
   const keywords = active.filter(t => t.trigger_type === 'keyword').sort((a, b) => a.priority - b.priority)
   for (const t of keywords) {
-    if (normalize(t.trigger_value ?? '') === normalizedText) return t
+    if (t.trigger_value && normalize(t.trigger_value) === normalizedText) return t
   }
 
   // Pass 3: keyword contains match — longest trigger_value first
-  const byLength = [...keywords].sort((a, b) => (b.trigger_value?.length ?? 0) - (a.trigger_value?.length ?? 0))
+  const byLength = [...keywords].sort((a, b) => {
+    const lenDiff = normalize(b.trigger_value ?? '').length - normalize(a.trigger_value ?? '').length
+    return lenDiff !== 0 ? lenDiff : a.priority - b.priority
+  })
   for (const t of byLength) {
     const normalized_value = normalize(t.trigger_value ?? '')
     if (normalized_value && normalizedText.includes(normalized_value)) return t
