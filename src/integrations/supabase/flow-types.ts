@@ -44,6 +44,7 @@ export interface FlowEdge {
   condition_type: ConditionType
   condition_value: string | null
   condition_variable: string | null
+  condition_expression?: string | null
   is_fallback: boolean
   priority: number
   label: string | null
@@ -59,6 +60,7 @@ export interface FlowTrigger {
   trigger_value: string | null
   priority: number
   is_active: boolean
+  metadata?: Record<string, unknown>
   created_at: string
 }
 
