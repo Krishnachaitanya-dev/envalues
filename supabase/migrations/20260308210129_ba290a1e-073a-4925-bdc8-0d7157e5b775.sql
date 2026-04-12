@@ -1,0 +1,1 @@
+ALTER TABLE public.owners DROP CONSTRAINT IF EXISTS owners_whatsapp_business_number_key;

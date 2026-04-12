@@ -54,4 +54,11 @@ describe('flow-types exports', () => {
     }
     expect(t.trigger_type).toBe('keyword')
   })
+
+  it('useDashboardData source does not query chatbots or qa_pairs', async () => {
+    const { readFileSync } = await import('fs')
+    const src = readFileSync('src/hooks/useDashboardData.ts', 'utf-8')
+    expect(src).not.toContain("from('chatbots')")
+    expect(src).not.toContain("from('qa_pairs')")
+  })
 })

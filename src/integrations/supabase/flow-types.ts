@@ -18,6 +18,10 @@ export interface Flow {
   status: FlowStatus
   version: number
   entry_node_id: string | null
+  created_from_template_id?: string | null
+  created_from_template_version?: number | null
+  template_applied_at?: string | null
+  template_request_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -58,6 +62,7 @@ export interface FlowTrigger {
   target_node_id: string | null
   trigger_type: TriggerType
   trigger_value: string | null
+  normalized_trigger_value?: string | null
   priority: number
   is_active: boolean
   metadata?: Record<string, unknown>

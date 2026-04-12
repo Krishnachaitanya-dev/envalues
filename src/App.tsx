@@ -14,7 +14,7 @@ import NotFound from "./pages/NotFound";
 import DashboardLayout from "./layouts/DashboardLayout";
 import AdminLayout from "./layouts/AdminLayout";
 import OverviewPage from "./components/dashboard/overview/OverviewPage";
-import BuilderPage from "./components/dashboard/builder/BuilderPage";
+import FlowBuilderPage from "./components/dashboard/builder/FlowBuilderPage";
 import SettingsPage from "./components/dashboard/settings/SettingsPage";
 import BillingPage from "./components/dashboard/billing/BillingPage";
 import AnalyticsPage from "./components/dashboard/analytics/AnalyticsPage";
@@ -47,7 +47,7 @@ const App = () => (
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<OverviewPage />} />
-            <Route path="builder" element={<BuilderPage />} />
+            <Route path="builder" element={<FlowBuilderPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="billing" element={<BillingPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />

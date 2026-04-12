@@ -60,6 +60,11 @@ describe('matchesEdge', () => {
     expect(matchesEdge(makeEdge({ condition_type: 'variable_contains', condition_variable: 'user.plan', condition_value: 'free' }), session, '')).toBe(false)
   })
 
+  it('variable_contains — returns false when condition_value is null', () => {
+    const edge = makeEdge({ condition_type: 'variable_contains', condition_variable: 'user.plan', condition_value: null })
+    expect(matchesEdge(edge, makeSession({ 'user.plan': 'pro' }), '')).toBe(false)
+  })
+
   it('unknown condition_type returns false', () => {
     // @ts-expect-error testing invalid type
     expect(matchesEdge(makeEdge({ condition_type: 'unknown' }), session, 'hi')).toBe(false)

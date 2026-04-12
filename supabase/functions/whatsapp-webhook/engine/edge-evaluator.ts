@@ -41,8 +41,11 @@ export function matchesEdge(
     }
     case 'variable_equals':
       return String(session.context[edge.condition_variable ?? ''] ?? '') === (edge.condition_value ?? '')
-    case 'variable_contains':
-      return String(session.context[edge.condition_variable ?? ''] ?? '').includes(edge.condition_value ?? '')
+    case 'variable_contains': {
+      const val = edge.condition_value
+      if (!val) return false
+      return String(session.context[edge.condition_variable ?? ''] ?? '').includes(val)
+    }
     default:
       return false
   }

@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 4%;
+    --foreground: 0 0% 100%;
+
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 145 65% 49%;
+    --primary-foreground: 0 0% 0%;
+
+    --secondary: 168 40% 32%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 0 0% 9%;
+    --muted-foreground: 218 11% 65%;
+
+    --accent: 0 0% 9%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+
+    --border: 0 0% 100% / 0.07;
+    --input: 0 0% 100% / 0.1;
+    --ring: 145 65% 49%;
+
+    --radius: 0.75rem;
+
+    --surface: 0 0% 8.5%;
+    --surface-raised: 0 0% 5%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  /* Override autofill yellow bg */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0px 1000px hsl(0 0% 5%) inset !important;
+    -webkit-text-fill-color: #ffffff !important;
+    caret-color: #ffffff;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+
+  /* Thin dark scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(0 0% 20%);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(0 0% 30%);
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Syne', sans-serif;
+  }
+  .font-body {
+    font-family: 'DM Sans', sans-serif;
+  }
+  .glow-green {
+    box-shadow: 0 0 20px rgba(37, 211, 102, 0.3);
+  }
+  .glow-green-sm {
+    box-shadow: 0 0 12px rgba(37, 211, 102, 0.2);
+  }
+  .bg-noise {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  }
+}
