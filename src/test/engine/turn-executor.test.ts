@@ -196,4 +196,79 @@ describe('executeTurn', () => {
     const firstSend = calls.indexOf('send')
     expect(firstSave).toBeLessThan(firstSend)
   })
+
+  it('sets session.status to handoff when handoff node executes', async () => {
+    const nodes = [
+      makeNode('n_handoff', 'handoff', {
+        department: 'sales', message: 'Connecting you...', allow_resume: false,
+        queue_strategy: 'round_robin', handoff_timeout_hours: 24,
+      }),
+    ]
+    const edges: FlowEdge[] = []
+    const session = makeSession({ current_node_id: 'n_handoff' })
+    const deps = makeDeps(nodes, edges)
+    const alertsSent: string[] = []
+    deps.sendHandoffAlert = async (_ownerPhone, customerPhone) => { alertsSent.push(customerPhone) }
+    deps.ownerReceptionPhone = '+919999999999'
+
+    await executeTurn(session, '', deps)
+
+    expect(session.status).toBe('handoff')
+    expect(deps.sentMessages).toContain('Connecting you...')
+    expect(alertsSent).toContain('911234567890')
+    expect(deps.closedSessions).toHaveLength(0)
+  })
+
+  it('kills session with missing_node when initial current_node_id does not exist', async () => {
+    const session = makeSession({ current_node_id: 'nonexistent_node' })
+    const deps = makeDeps([], [])
+
+    await executeTurn(session, '', deps)
+
+    expect(deps.killedSessions).toContain('s1')
+  })
+
+  it('follows call stack return on end node inside a subflow', async () => {
+    // Simulates: parent flow → subflow → end → return to parent message → end
+    const nodes = [
+      makeNode('n_subflow_end', 'end', { farewell_message: 'Subflow done' }),
+      makeNode('n_parent_msg', 'message', { text: 'Back in parent' }),
+      makeNode('n_parent_end', 'end', {}),
+    ]
+    const edges = [
+      makeEdge('n_parent_msg', 'n_parent_end'),
+    ]
+    // Session has a call stack frame pointing back to parent message
+    const session = makeSession({
+      current_node_id: 'n_subflow_end',
+      call_stack: [{
+        flow_id: 'f1',
+        return_node_id: 'n_parent_msg',
+        context_snapshot: {},
+      }],
+    })
+    const deps = makeDeps(nodes, edges)
+
+    await executeTurn(session, '', deps)
+
+    expect(deps.sentMessages).toContain('Subflow done')
+    expect(deps.sentMessages).toContain('Back in parent')
+    expect(deps.closedSessions).toContain('s1')
+  })
+
+  it('kills session on cycle via message node edge self-loop', async () => {
+    // Message node with unconditional edge back to itself (edge evaluator path, not jump)
+    const nodes = [
+      makeNode('n_loop', 'message', { text: 'looping' }),
+    ]
+    const edges = [
+      makeEdge('n_loop', 'n_loop', 'always'),
+    ]
+    const session = makeSession({ current_node_id: 'n_loop' })
+    const deps = makeDeps(nodes, edges)
+
+    await executeTurn(session, '', deps)
+
+    expect(deps.killedSessions).toContain('s1')
+  })
 })

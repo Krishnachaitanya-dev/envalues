@@ -149,8 +149,8 @@ export async function executeTurn(session: FlowSession, inbound: string, deps: T
 
     // Dead end: no matching edge
     if (!nextNodeId) {
-      await deps.enqueueMessages([{ type: 'text', text: "I didn't understand that. Type 'hi' to start over." }], session.phone)
       await deps.saveSession(session)
+      await deps.enqueueMessages([{ type: 'text', text: "I didn't understand that. Type 'hi' to start over." }], session.phone)
       return
     }
 
