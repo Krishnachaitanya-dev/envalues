@@ -49,6 +49,8 @@ export function executeEndNode(node: FlowNode, session: FlowSession): NodeResult
   if (session.call_stack.length > 0) {
     const frame = session.call_stack.pop()!
     session.flow_id = frame.flow_id
+    // context_snapshot intentionally not restored: subflow side-effects (context writes) are preserved in the parent.
+    // If isolation is needed in future, restore: session.context = { ...frame.context_snapshot, ...session.context }
     const messages: OutboundMessage[] = config.farewell_message
       ? [{ type: 'text', text: config.farewell_message }]
       : []
@@ -56,7 +58,7 @@ export function executeEndNode(node: FlowNode, session: FlowSession): NodeResult
   }
 
   return emptyResult({
-    messages: [{ type: 'text', text: config.farewell_message ?? '' }],
+    messages: config.farewell_message ? [{ type: 'text', text: config.farewell_message }] : [],
     skip_edge_evaluation: true,
   })
 }
@@ -153,7 +155,7 @@ export function executeSubflowNode(
 
   session.call_stack.push({
     flow_id: session.flow_id,
-    return_node_id: node.id,
+    return_node_id: node.id,  // turn-executor resolves the actual successor via the outgoing edge of this node
     context_snapshot: { ...session.context },
   })
 

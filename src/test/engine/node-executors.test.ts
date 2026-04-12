@@ -204,6 +204,7 @@ describe('executeSubflowNode', () => {
     expect(session.call_stack).toHaveLength(1)
     expect(session.call_stack[0].flow_id).toBe('f1')
     expect(session.call_stack[0].context_snapshot).toEqual({ a: 1 })
+    expect(session.call_stack[0].return_node_id).toBe('n1')  // node.id of the subflow call-site node
   })
 
   it('returns error message when call stack depth >= 10', () => {
