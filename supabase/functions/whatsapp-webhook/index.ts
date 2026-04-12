@@ -1,51 +1,15 @@
+// supabase/functions/whatsapp-webhook/index.ts
+// Phase 2: Graph execution engine — replaces menu-bot logic.
+// Reads from: flow_nodes, flow_edges, flow_triggers, flow_sessions, owners.
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { normalize } from './engine/normalize.ts'
+import { resolveTrigger, findRestartTrigger } from './engine/trigger-engine.ts'
+import { executeTurn, TurnDeps } from './engine/turn-executor.ts'
+import type { FlowSession, FlowTrigger, OutboundMessage } from './engine/types.ts'
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
-interface WhatsAppMessage {
-  from: string
-  id: string
-  timestamp: string
-  type: string
-  text?: { body: string }
-  interactive?: {
-    type: string
-    button_reply?: { id: string; title: string }
-    list_reply?: { id: string; title: string }
-  }
-}
-
-interface Chatbot {
-  id: string
-  owner_id: string
-  chatbot_name: string
-  greeting_message: string
-  farewell_message: string
-  is_active: boolean
-  chatbot_type: string // 'menu'
-}
-
-interface OwnerWithChatbot {
-  chatbot: Chatbot
-  whatsapp_api_token: string
-  whatsapp_phone_number_id: string
-}
-
-interface QAPair {
-  id: string
-  chatbot_id: string
-  question_text: string
-  answer_text: string
-  is_main_question: boolean
-  parent_question_id: string | null
-  display_order: number
-  is_active: boolean
-  media_url: string | null
-  media_type: string | null
-}
-
-// ── Config ───────────────────────────────────────────────────────────────────
+// ── Config ────────────────────────────────────────────────────────────────────
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -54,23 +18,207 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 const WHATSAPP_API_URL = Deno.env.get('WHATSAPP_API_URL') || 'https://graph.facebook.com/v21.0'
 const WHATSAPP_VERIFY_TOKEN = Deno.env.get('WHATSAPP_VERIFY_TOKEN')!
 
-const RATE_LIMIT_WINDOW_MINUTES = 1
-const RATE_LIMIT_MAX_REQUESTS = 100
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Tenant lookup ─────────────────────────────────────────────────────────────
 
-function normalizePhoneNumber(phone: string): string {
-  return phone.trim().replace(/[\s\-\+\(\)]/g, '')
+async function getOwner(businessNumber: string): Promise<{ id: string; whatsapp_api_token: string; reception_phone: string | null } | null> {
+  const clean = businessNumber.replace(/[\s\-\+\(\)]/g, '')
+  for (const num of [clean, `+${clean}`]) {
+    const { data } = await supabase
+      .from('owners')
+      .select('id, whatsapp_api_token, reception_phone')
+      .eq('whatsapp_business_number', num)
+      .single()
+    if (data) return data
+  }
+  return null
 }
 
-// ── Security ─────────────────────────────────────────────────────────────────
+// ── Session management ────────────────────────────────────────────────────────
 
-async function verifyWhatsAppSignature(body: string, signature: string, appSecret: string): Promise<boolean> {
+async function getActiveSession(ownerId: string, phone: string): Promise<FlowSession | null> {
+  const { data } = await supabase
+    .from('flow_sessions')
+    .select('*')
+    .eq('owner_id', ownerId)
+    .eq('phone', phone)
+    .in('status', ['active', 'handoff'])
+    .single()
+  return data as FlowSession | null
+}
+
+async function createSession(ownerId: string, phone: string, trigger: FlowTrigger): Promise<FlowSession> {
+  const entryNodeId = trigger.target_node_id ?? await getFlowEntryNode(trigger.flow_id)
+  const { data, error } = await supabase
+    .from('flow_sessions')
+    .upsert({
+      owner_id: ownerId,
+      flow_id: trigger.flow_id,
+      current_node_id: entryNodeId,
+      phone,
+      status: 'active',
+      context: {},
+      call_stack: [],
+      step_count: 0,
+      max_steps: 100,
+      last_message_at: new Date().toISOString(),
+    }, { onConflict: 'owner_id,phone' })
+    .select()
+    .single()
+  if (error) throw error
+  return data as FlowSession
+}
+
+async function getFlowEntryNode(flowId: string): Promise<string> {
+  const { data } = await supabase
+    .from('flows')
+    .select('entry_node_id')
+    .eq('id', flowId)
+    .single()
+  return data?.entry_node_id ?? ''
+}
+
+async function expireSession(sessionId: string): Promise<void> {
+  await supabase
+    .from('flow_sessions')
+    .update({ status: 'expired', updated_at: new Date().toISOString() })
+    .eq('id', sessionId)
+}
+
+// ── Idempotency ───────────────────────────────────────────────────────────────
+
+async function isDuplicateMessage(messageId: string, ownerId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('processed_message_ids')
+    .select('id')
+    .eq('message_id', messageId)
+    .eq('owner_id', ownerId)
+    .single()
+  if (data) return true
+  // Mark as processed (ignore conflict — may race on duplicate delivery)
+  await supabase.from('processed_message_ids').insert({
+    message_id: messageId,
+    owner_id: ownerId,
+    processed_at: new Date().toISOString(),
+  }).throwOnError()
+  return false
+}
+
+// ── TurnDeps wiring ───────────────────────────────────────────────────────────
+
+function buildTurnDeps(ownerReceptionPhone: string | null): TurnDeps {
+  return {
+    getNode: async (id) => {
+      const { data } = await supabase.from('flow_nodes').select('*').eq('id', id).single()
+      return data ?? null
+    },
+
+    getOutgoingEdges: async (nodeId) => {
+      const { data } = await supabase.from('flow_edges').select('*').eq('source_node_id', nodeId)
+      return data ?? []
+    },
+
+    saveSession: async (session) => {
+      await supabase.from('flow_sessions').update({
+        flow_id: session.flow_id,
+        current_node_id: session.current_node_id,
+        status: session.status,
+        context: session.context,
+        call_stack: session.call_stack,
+        step_count: session.step_count,
+        last_node_executed_at: session.last_node_executed_at,
+        updated_at: new Date().toISOString(),
+      }).eq('id', session.id)
+    },
+
+    enqueueMessages: async (messages, phone) => {
+      for (const msg of messages) {
+        await sendWhatsAppMessage(phone, msg)
+      }
+    },
+
+    sendHandoffAlert: async (ownerPhone, customerPhone, department) => {
+      await sendWhatsAppMessage(ownerPhone, {
+        type: 'text',
+        text: `New handoff from ${customerPhone}${department ? ` [${department}]` : ''}. Open inbox to reply.`,
+      })
+    },
+
+    closeSession: async (session) => {
+      await supabase.from('flow_sessions').update({
+        status: 'completed',
+        updated_at: new Date().toISOString(),
+      }).eq('id', session.id)
+    },
+
+    killSession: async (session, reason) => {
+      console.error(`[engine] Session ${session.id} killed: ${reason}`)
+      await supabase.from('flow_sessions').update({
+        status: 'error',
+        context: { ...session.context, __kill_reason: reason },
+        updated_at: new Date().toISOString(),
+      }).eq('id', session.id)
+    },
+
+    fetchFn: fetch,
+
+    getSubflowEntryNode: async (subflowId) => {
+      const { data } = await supabase.from('flows').select('entry_node_id').eq('id', subflowId).single()
+      return data?.entry_node_id ?? null
+    },
+
+    ownerReceptionPhone: ownerReceptionPhone ?? undefined,
+  }
+}
+
+// ── WhatsApp sender ───────────────────────────────────────────────────────────
+
+async function sendWhatsAppMessage(to: string, msg: OutboundMessage): Promise<void> {
+  const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN')!
+  const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID')!
+
+  let payload: Record<string, unknown>
+
+  if (msg.type === 'text') {
+    payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'text',
+      text: { preview_url: false, body: msg.text ?? '' },
+    }
+  } else {
+    const mediaPayload: Record<string, unknown> = { link: msg.url }
+    if (msg.caption) mediaPayload.caption = msg.caption
+    if (msg.type === 'document') mediaPayload.filename = (msg.url ?? '').split('/').pop() || 'file'
+    payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: msg.type,
+      [msg.type]: mediaPayload,
+    }
+  }
+
+  try {
+    const res = await fetch(`${WHATSAPP_API_URL}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) console.error(`[webhook] Send failed (${res.status}):`, await res.text())
+  } catch (err) {
+    console.error('[webhook] Send error:', err)
+  }
+}
+
+// ── Signature verification ────────────────────────────────────────────────────
+
+async function verifySignature(body: string, signature: string, appSecret: string): Promise<boolean> {
   const encoder = new TextEncoder()
   const key = await crypto.subtle.importKey('raw', encoder.encode(appSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
   const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(body))
@@ -78,171 +226,66 @@ async function verifyWhatsAppSignature(body: string, signature: string, appSecre
   return computed === signature
 }
 
-async function checkRateLimit(ownerId: string, requestId: string): Promise<boolean> {
-  try {
-    const windowStart = new Date()
-    windowStart.setMinutes(windowStart.getMinutes() - RATE_LIMIT_WINDOW_MINUTES)
-    const { count } = await supabase.from('rate_limits').select('*', { count: 'exact', head: true })
-      .eq('owner_id', ownerId).eq('endpoint', 'whatsapp-webhook').gte('window_start', windowStart.toISOString())
-    if ((count || 0) >= RATE_LIMIT_MAX_REQUESTS) {
-      console.warn(`[${requestId}] Rate limit exceeded for owner: ${ownerId}`)
-      return false
-    }
-    await supabase.from('rate_limits').insert({ owner_id: ownerId, endpoint: 'whatsapp-webhook', window_start: new Date().toISOString() })
-    return true
-  } catch { return true }
-}
+// ── Main receive_message ──────────────────────────────────────────────────────
 
-// ── Menu Bot: DB helpers ──────────────────────────────────────────────────────
-
-async function saveMessage(chatbotId: string, customerPhone: string, direction: 'inbound' | 'outbound', content: string, msgType: string = 'text') {
+async function receiveMessage(ownerId: string, phone: string, rawText: string, messageId: string, receptionPhone: string | null): Promise<void> {
+  // 1. Idempotency — skip if already processed
   try {
-    await supabase.from('messages').insert({ chatbot_id: chatbotId, customer_phone: customerPhone, direction, content, msg_type: msgType })
-  } catch (err) { console.error('Failed to save message:', err) }
-}
-
-async function upsertContact(chatbotId: string, customerPhone: string) {
-  try {
-    const { data: existing } = await supabase.from('contacts').select('id, total_messages').eq('chatbot_id', chatbotId).eq('phone', customerPhone).single()
-    if (existing) {
-      await supabase.from('contacts').update({ last_active_at: new Date().toISOString(), total_messages: existing.total_messages + 1 }).eq('id', existing.id)
-    } else {
-      await supabase.from('contacts').insert({ chatbot_id: chatbotId, phone: customerPhone, first_seen_at: new Date().toISOString(), last_active_at: new Date().toISOString(), total_messages: 1 })
-    }
-  } catch (err) { console.error('Failed to upsert contact:', err) }
-}
-
-async function getOwnerAndChatbot(businessNumber: string, requestId: string): Promise<OwnerWithChatbot | null> {
-  try {
-    const tryNumber = async (num: string) => {
-      const { data: ownerData } = await supabase.from('owners').select('id, whatsapp_api_token, whatsapp_business_number').eq('whatsapp_business_number', num).single()
-      if (!ownerData) return null
-      const { data: chatbotData } = await supabase.from('chatbots').select('*').eq('owner_id', ownerData.id).eq('is_active', true).single()
-      if (!chatbotData) return null
-      return { chatbot: chatbotData as Chatbot, whatsapp_api_token: ownerData.whatsapp_api_token || '', whatsapp_phone_number_id: '' }
-    }
-    return (await tryNumber(businessNumber)) || (await tryNumber(`+${businessNumber}`))
-  } catch (error) {
-    console.error(`[${requestId}] DB error:`, error)
-    return null
+    if (await isDuplicateMessage(messageId, ownerId)) return
+  } catch {
+    // processed_message_ids table may not exist yet — proceed
   }
-}
 
-async function getMainMenuQuestions(chatbotId: string): Promise<QAPair[]> {
-  const { data } = await supabase.from('qa_pairs').select('*').eq('chatbot_id', chatbotId).is('parent_question_id', null).eq('is_active', true).order('display_order')
-  return (data || []) as QAPair[]
-}
+  // 2. Normalize input
+  const text = normalize(rawText)
 
-async function getQAPairById(qaId: string): Promise<QAPair | null> {
-  const { data } = await supabase.from('qa_pairs').select('*').eq('id', qaId).single()
-  return data as QAPair | null
-}
+  // 3. Load all triggers for this owner
+  const { data: triggerRows } = await supabase
+    .from('flow_triggers')
+    .select('*')
+    .eq('owner_id', ownerId)
+    .eq('is_active', true)
+    .order('priority', { ascending: true })
+  const triggers: FlowTrigger[] = triggerRows ?? []
 
-async function getChildQuestions(parentId: string): Promise<QAPair[]> {
-  const { data } = await supabase.from('qa_pairs').select('*').eq('parent_question_id', parentId).eq('is_active', true).order('display_order')
-  return (data || []) as QAPair[]
-}
+  // 4. Get active session
+  const session = await getActiveSession(ownerId, phone)
 
-// ── Menu Bot: handlers ────────────────────────────────────────────────────────
-
-async function handleTextMessage(customerPhone: string, text: string, chatbot: Chatbot, accessToken: string, phoneNumberId: string, requestId: string, sessionId?: string) {
-  const textLower = text.trim().toLowerCase()
-  const escalationKeywords = ['human', 'agent', 'support', 'help', 'representative', 'person', 'staff', 'operator']
-  if (escalationKeywords.some(k => textLower.includes(k))) {
-    await supabase.from('customer_sessions').upsert({ chatbot_id: chatbot.id, customer_phone_number: customerPhone, needs_human: true, escalated_at: new Date().toISOString(), last_activity_at: new Date().toISOString() }, { onConflict: 'chatbot_id,customer_phone_number' })
-    const reply = "I've notified our team. An agent will reach out to you shortly. 🙏\n\nThank you for your patience!"
-    await sendTextMessage(customerPhone, reply, accessToken, phoneNumberId, requestId)
-    await saveMessage(chatbot.id, customerPhone, 'outbound', reply, 'text')
+  // 5. Handoff guard: bot is silent during agent sessions
+  if (session?.status === 'handoff') {
+    console.log(`[webhook] Handoff session active for ${phone} — routing to inbox`)
     return
   }
-  if (sessionId) await supabase.from('customer_sessions').update({ last_activity_at: new Date().toISOString() }).eq('id', sessionId)
-  if (['hi', 'hello', 'hey', 'start', 'menu'].includes(textLower)) {
-    const mainQuestions = await getMainMenuQuestions(chatbot.id)
-    if (mainQuestions.length === 0) {
-      const reply = 'Sorry, the chatbot is not set up yet.'
-      await sendTextMessage(customerPhone, reply, accessToken, phoneNumberId, requestId)
-      await saveMessage(chatbot.id, customerPhone, 'outbound', reply, 'text')
-      return
-    }
-    await sendInteractiveMessage(customerPhone, chatbot.greeting_message, mainQuestions, accessToken, phoneNumberId, requestId, chatbot.id)
-  } else if (['thank you', 'thanks', 'bye', 'goodbye', 'exit'].includes(textLower)) {
-    await sendTextMessage(customerPhone, chatbot.farewell_message, accessToken, phoneNumberId, requestId)
-    await saveMessage(chatbot.id, customerPhone, 'outbound', chatbot.farewell_message, 'text')
-  } else {
-    const reply = "I don't understand. Please click the buttons to interact with me! 😊"
-    await sendTextMessage(customerPhone, reply, accessToken, phoneNumberId, requestId)
-    await saveMessage(chatbot.id, customerPhone, 'outbound', reply, 'text')
-  }
-}
 
-async function handleButtonClick(customerPhone: string, qaId: string, chatbot: Chatbot, accessToken: string, phoneNumberId: string, requestId: string) {
-  const qaPair = await getQAPairById(qaId)
-  if (!qaPair) {
-    const reply = 'Sorry, this option is no longer available.'
-    await sendTextMessage(customerPhone, reply, accessToken, phoneNumberId, requestId)
-    await saveMessage(chatbot.id, customerPhone, 'outbound', reply, 'text')
+  // 6. Restart trigger check (runs even if session active)
+  const restart = findRestartTrigger(triggers, text)
+  if (restart) {
+    if (session) await expireSession(session.id)
+    const newSession = await createSession(ownerId, phone, restart)
+    const deps = buildTurnDeps(receptionPhone)
+    await executeTurn(newSession, text, deps)
     return
   }
-  if (qaPair.media_url && qaPair.media_type) {
-    await sendMediaMessage(customerPhone, qaPair.media_url, qaPair.media_type, accessToken, phoneNumberId, requestId)
-    await saveMessage(chatbot.id, customerPhone, 'outbound', `[${qaPair.media_type}: ${qaPair.media_url}]`, qaPair.media_type)
+
+  // 7. Active session → continue
+  if (session?.status === 'active') {
+    const deps = buildTurnDeps(receptionPhone)
+    await executeTurn(session, text, deps)
+    return
   }
-  const childQuestions = await getChildQuestions(qaId)
-  const mainQuestions = await getMainMenuQuestions(chatbot.id)
-  const buttons = childQuestions.length > 0 ? childQuestions : mainQuestions
-  await sendInteractiveMessage(customerPhone, qaPair.answer_text, buttons, accessToken, phoneNumberId, requestId, chatbot.id)
+
+  // 8. No session → trigger resolution
+  const trigger = resolveTrigger(triggers, text)
+  if (!trigger) {
+    await sendWhatsAppMessage(phone, { type: 'text', text: "Reply 'hi' to get started." })
+    return
+  }
+  const newSession = await createSession(ownerId, phone, trigger)
+  const deps = buildTurnDeps(receptionPhone)
+  await executeTurn(newSession, text, deps)
 }
 
-// ── WhatsApp API senders ──────────────────────────────────────────────────────
-
-async function sendTextMessage(to: string, text: string, accessToken: string, phoneNumberId: string, requestId: string) {
-  try {
-    const response = await fetch(`${WHATSAPP_API_URL}/${phoneNumberId}/messages`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { preview_url: false, body: text } })
-    })
-    if (!response.ok) console.error(`[${requestId}] ❌ Text send failed:`, await response.text())
-    else console.log(`[${requestId}] ✅ Text sent to: ${to}`)
-  } catch (error) { console.error(`[${requestId}] Send error:`, error) }
-}
-
-async function sendMediaMessage(to: string, mediaUrl: string, mediaType: string, accessToken: string, phoneNumberId: string, requestId: string, caption?: string) {
-  const typeMap: Record<string, string> = { image: 'image', document: 'document', video: 'video' }
-  const waType = typeMap[mediaType] || 'document'
-  const mediaPayload: Record<string, unknown> = { link: mediaUrl }
-  if (waType === 'document') mediaPayload.filename = mediaUrl.split('/').pop() || 'file'
-  if (caption) mediaPayload.caption = caption
-  try {
-    const response = await fetch(`${WHATSAPP_API_URL}/${phoneNumberId}/messages`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: waType, [waType]: mediaPayload })
-    })
-    if (!response.ok) console.error(`[${requestId}] ❌ Media send failed:`, await response.text())
-  } catch (error) { console.error(`[${requestId}] Media send error:`, error) }
-}
-
-async function sendInteractiveMessage(to: string, bodyText: string, questions: QAPair[], accessToken: string, phoneNumberId: string, requestId: string, chatbotId: string) {
-  const limitedQuestions = questions.slice(0, 3)
-  const buttons = limitedQuestions.map(qa => ({ type: 'reply', reply: { id: qa.id, title: qa.question_text.substring(0, 20) } }))
-  try {
-    const response = await fetch(`${WHATSAPP_API_URL}/${phoneNumberId}/messages`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'interactive', interactive: { type: 'button', body: { text: bodyText }, action: { buttons } } })
-    })
-    if (response.ok) {
-      const outboundContent = `${bodyText}\n[${limitedQuestions.map(q => q.question_text).join(' | ')}]`
-      await saveMessage(chatbotId, to, 'outbound', outboundContent, 'interactive')
-      console.log(`[${requestId}] ✅ Interactive sent to ${to}`)
-    } else {
-      console.error(`[${requestId}] ❌ Interactive send failed:`, await response.text())
-    }
-  } catch (error) { console.error(`[${requestId}] Interactive send error:`, error) }
-}
-
-// ── Main handler ──────────────────────────────────────────────────────────────
+// ── HTTP handler ──────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
   const requestId = crypto.randomUUID()
@@ -256,7 +299,7 @@ serve(async (req: Request) => {
     const token = url.searchParams.get('hub.verify_token')
     const challenge = url.searchParams.get('hub.challenge')
     if (mode === 'subscribe' && token === WHATSAPP_VERIFY_TOKEN) {
-      console.log(`[${requestId}] ✅ Webhook verified`)
+      console.log(`[${requestId}] Webhook verified`)
       return new Response(challenge, { status: 200 })
     }
     return new Response('Verification failed', { status: 403 })
@@ -266,12 +309,14 @@ serve(async (req: Request) => {
   if (req.method === 'POST') {
     try {
       const rawBody = await req.text()
+
+      // Signature verification
       const appSecret = Deno.env.get('WHATSAPP_APP_SECRET')
       if (appSecret) {
         const signature = req.headers.get('x-hub-signature-256') || ''
-        const isValid = await verifyWhatsAppSignature(rawBody, signature.replace('sha256=', ''), appSecret)
+        const isValid = await verifySignature(rawBody, signature.replace('sha256=', ''), appSecret)
         if (!isValid) {
-          console.error(`[${requestId}] ❌ Invalid signature`)
+          console.error(`[${requestId}] Invalid signature`)
           return new Response('Forbidden', { status: 403 })
         }
       }
@@ -286,35 +331,36 @@ serve(async (req: Request) => {
         return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
       }
 
-      const message: WhatsAppMessage = value.messages[0]
-      const customerPhone = message.from
-      const businessNumber = value.metadata.display_phone_number
+      const message = value.messages[0]
+      const customerPhone: string = message.from
+      const businessNumber: string = value.metadata.display_phone_number
+      let rawText = ''
 
-      console.log(`[${requestId}] 📩 Message from ${customerPhone} to ${businessNumber}`)
-
-      const normalizedNumber = normalizePhoneNumber(businessNumber)
-      const ownerData = await getOwnerAndChatbot(normalizedNumber, requestId)
-      if (!ownerData) return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
-
-      const { chatbot, whatsapp_api_token, whatsapp_phone_number_id } = ownerData
-      const withinRateLimit = await checkRateLimit(chatbot.owner_id, requestId)
-      if (!withinRateLimit) return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
-      if (!whatsapp_api_token) return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
-
-      const phoneNumberId = whatsapp_phone_number_id || Deno.env.get('WHATSAPP_PHONE_NUMBER_ID') || ''
-
-      // ── Menu bot ──
-      const { data: session } = await supabase.from('customer_sessions').select('id, agent_active, needs_human').eq('chatbot_id', chatbot.id).eq('customer_phone_number', customerPhone).single()
-
-      if (message.type === 'text') {
-        await Promise.all([saveMessage(chatbot.id, customerPhone, 'inbound', message.text!.body, 'text'), upsertContact(chatbot.id, customerPhone)])
-        if (!session?.agent_active) await handleTextMessage(customerPhone, message.text!.body, chatbot, whatsapp_api_token, phoneNumberId, requestId, session?.id)
-      } else if (message.type === 'interactive' && message.interactive?.button_reply) {
-        await Promise.all([saveMessage(chatbot.id, customerPhone, 'inbound', message.interactive.button_reply.title, 'button'), upsertContact(chatbot.id, customerPhone)])
-        if (!session?.agent_active) await handleButtonClick(customerPhone, message.interactive.button_reply.id, chatbot, whatsapp_api_token, phoneNumberId, requestId)
+      if (message.type === 'text') rawText = message.text?.body ?? ''
+      else if (message.type === 'interactive') {
+        rawText = message.interactive?.button_reply?.title
+          ?? message.interactive?.list_reply?.title
+          ?? ''
       }
 
-      return new Response(JSON.stringify({ status: 'ok' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      if (!rawText) return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
+
+      console.log(`[${requestId}] from=${customerPhone} biz=${businessNumber} text="${rawText}"`)
+
+      const owner = await getOwner(businessNumber)
+      if (!owner) {
+        console.warn(`[${requestId}] No owner for ${businessNumber}`)
+        return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
+      }
+
+      // Fire-and-forget — WhatsApp needs 200 within 15s
+      receiveMessage(owner.id, customerPhone, rawText, message.id, owner.reception_phone)
+        .catch(err => console.error(`[${requestId}] receiveMessage error:`, err))
+
+      return new Response(JSON.stringify({ status: 'ok' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     } catch (error) {
       console.error(`[${requestId}] Webhook error:`, error)
       return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
