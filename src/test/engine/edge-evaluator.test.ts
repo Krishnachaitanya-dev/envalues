@@ -64,6 +64,24 @@ describe('matchesEdge', () => {
     // @ts-expect-error testing invalid type
     expect(matchesEdge(makeEdge({ condition_type: 'unknown' }), session, 'hi')).toBe(false)
   })
+
+  it('condition_expression — returns false when no evalExpression injected', () => {
+    const edge = makeEdge({ condition_expression: "input == 'yes'" })
+    expect(matchesEdge(edge, makeSession(), 'yes')).toBe(false)
+  })
+
+  it('condition_expression — calls evalExpression when provided and returns its result', () => {
+    const edge = makeEdge({ condition_expression: "input == 'yes'" })
+    const evalExpr = (_expr: string, ctx: { input: string; context: Record<string, unknown> }) => ctx.input === 'yes'
+    expect(matchesEdge(edge, makeSession(), 'yes', evalExpr)).toBe(true)
+    expect(matchesEdge(edge, makeSession(), 'no', evalExpr)).toBe(false)
+  })
+
+  it('condition_expression — returns false when evalExpression throws', () => {
+    const edge = makeEdge({ condition_expression: 'bad expression' })
+    const evalExpr = () => { throw new Error('parse error') }
+    expect(matchesEdge(edge, makeSession(), 'hi', evalExpr)).toBe(false)
+  })
 })
 
 describe('evaluateEdges', () => {

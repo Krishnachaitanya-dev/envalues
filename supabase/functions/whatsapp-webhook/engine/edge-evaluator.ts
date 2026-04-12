@@ -25,13 +25,20 @@ export function matchesEdge(
       return true
     case 'equals':
       return inbound === (edge.condition_value ?? '')
-    case 'contains':
-      return inbound.includes(edge.condition_value ?? '')
-    case 'starts_with':
-      return inbound.startsWith(edge.condition_value ?? '')
-    case 'regex':
-      try { return new RegExp(edge.condition_value ?? '').test(inbound) }
+    case 'contains': {
+      const val = edge.condition_value
+      return val !== null && val !== '' && inbound.includes(val)
+    }
+    case 'starts_with': {
+      const val = edge.condition_value
+      return val !== null && val !== '' && inbound.startsWith(val)
+    }
+    case 'regex': {
+      const val = edge.condition_value
+      if (!val) return false
+      try { return new RegExp(val).test(inbound) }
       catch { return false }
+    }
     case 'variable_equals':
       return String(session.context[edge.condition_variable ?? ''] ?? '') === (edge.condition_value ?? '')
     case 'variable_contains':
@@ -45,6 +52,7 @@ export function matchesEdge(
  * Pick the target node id from a list of edges.
  * - Non-fallback edges are sorted by priority (ascending) and evaluated first.
  * - The fallback edge is used only if no non-fallback edge matched.
+ * - Fallback edge condition_type and condition_value are ignored — it fires unconditionally if no non-fallback edge matched.
  * - Returns null if nothing matches.
  */
 export function evaluateEdges(
