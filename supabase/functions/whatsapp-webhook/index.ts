@@ -110,7 +110,7 @@ async function isDuplicateMessage(messageId: string, ownerId: string): Promise<b
 
 // ── TurnDeps wiring ───────────────────────────────────────────────────────────
 
-function buildTurnDeps(ownerReceptionPhone: string | null, ownerCreds: { accessToken: string; phoneNumberId: string }): TurnDeps {
+function buildTurnDeps(ownerId: string, ownerReceptionPhone: string | null, ownerCreds: { accessToken: string; phoneNumberId: string }): TurnDeps {
   return {
     getNode: async (id) => {
       const { data } = await supabase.from('flow_nodes').select('*').eq('id', id).single()
@@ -138,6 +138,15 @@ function buildTurnDeps(ownerReceptionPhone: string | null, ownerCreds: { accessT
     enqueueMessages: async (messages, phone) => {
       for (const msg of messages) {
         await sendWhatsAppMessage(phone, msg, ownerCreds)
+        // Log outbound bot message
+        const text = msg.type === 'text' ? (msg.text ?? '') : `[${msg.type}] ${msg.url ?? ''}`
+        supabase.from('conversation_logs').insert({
+          owner_id: ownerId,
+          phone,
+          direction: 'outbound',
+          content: text,
+          msg_type: 'bot',
+        }).then(() => {}).catch(() => {})
       }
     },
 
@@ -238,14 +247,16 @@ async function receiveMessage(ownerId: string, phone: string, rawText: string, m
   // 2. Normalize input
   const text = normalize(rawText)
 
-  // 3. Load all triggers for this owner
+  // 3. Load triggers for this owner — only for published flows
   const { data: triggerRows } = await supabase
     .from('flow_triggers')
-    .select('*')
+    .select('id, flow_id, target_node_id, trigger_type, trigger_value, priority, is_active, metadata, flows!inner(status)')
     .eq('owner_id', ownerId)
     .eq('is_active', true)
+    .eq('flows.status', 'published')
     .order('priority', { ascending: true })
-  const triggers: FlowTrigger[] = triggerRows ?? []
+  // Strip the nested flows join object before passing to trigger engine
+  const triggers: FlowTrigger[] = (triggerRows ?? []).map(({ flows: _f, ...t }) => t as FlowTrigger)
 
   // 4. Get active session
   const session = await getActiveSession(ownerId, phone)
@@ -261,14 +272,14 @@ async function receiveMessage(ownerId: string, phone: string, rawText: string, m
   if (restart) {
     if (session) await expireSession(session.id)
     const newSession = await createSession(ownerId, phone, restart)
-    const deps = buildTurnDeps(receptionPhone, ownerCreds)
+    const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds)
     await executeTurn(newSession, text, deps)
     return
   }
 
   // 7. Active session → continue
   if (session?.status === 'active') {
-    const deps = buildTurnDeps(receptionPhone, ownerCreds)
+    const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds)
     await executeTurn(session, text, deps)
     return
   }
@@ -280,7 +291,7 @@ async function receiveMessage(ownerId: string, phone: string, rawText: string, m
     return
   }
   const newSession = await createSession(ownerId, phone, trigger)
-  const deps = buildTurnDeps(receptionPhone, ownerCreds)
+  const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds)
   await executeTurn(newSession, text, deps)
 }
 
@@ -356,6 +367,15 @@ serve(async (req: Request) => {
         accessToken: owner.whatsapp_api_token ?? Deno.env.get('WHATSAPP_ACCESS_TOKEN') ?? '',
         phoneNumberId: owner.whatsapp_phone_number_id ?? Deno.env.get('WHATSAPP_PHONE_NUMBER_ID') ?? '',
       }
+
+      // Log inbound to conversation_logs (best-effort)
+      supabase.from('conversation_logs').insert({
+        owner_id: owner.id,
+        phone: customerPhone,
+        direction: 'inbound',
+        content: rawText,
+        msg_type: 'bot',
+      }).then(() => {}).catch(() => {})
 
       // Fire-and-forget — WhatsApp needs 200 within 15s
       receiveMessage(owner.id, customerPhone, rawText, message.id, owner.reception_phone, ownerCreds)

@@ -1,16 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/integrations/supabase/client'
 import { formatDistanceToNow } from 'date-fns'
 
-export type Contact = {
-  customer_phone: string
+export type InboxSession = {
+  session_id: string
+  phone: string
+  status: 'active' | 'handoff'
   last_message: string
   last_message_at: string
   last_message_ago: string
-  total_messages: number
-  needs_human: boolean
-  agent_active: boolean
-  session_id: string | null
+  flow_id: string
 }
 
 export type Message = {
@@ -21,118 +20,109 @@ export type Message = {
   created_at: string
 }
 
-export function useInboxData(chatbotId: string | null) {
-  const [contacts, setContacts] = useState<Contact[]>([])
+export function useInboxData(ownerId: string | null) {
+  const [sessions, setSessions] = useState<InboxSession[]>([])
   const [messages, setMessages] = useState<Message[]>([])
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
-  const [loadingContacts, setLoadingContacts] = useState(true)
+  const [loadingSessions, setLoadingSessions] = useState(true)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sendingMessage, setSendingMessage] = useState(false)
   const [search, setSearch] = useState('')
+  const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-  // ── Load contacts list ───────────────────────────────────────────────────
-  const loadContacts = useCallback(async () => {
-    if (!chatbotId) { setLoadingContacts(false); return }
-    setLoadingContacts(true)
+  const loadSessions = useCallback(async () => {
+    if (!ownerId) { setLoadingSessions(false); return }
+    setLoadingSessions(true)
     try {
-      // Fetch messages grouped by phone
-      const { data: msgData, error: msgErr } = await supabase
-        .from('messages')
-        .select('customer_phone, content, created_at')
-        .eq('chatbot_id', chatbotId)
-        .order('created_at', { ascending: false })
-      if (msgErr) throw msgErr
+      // Get active/handoff sessions
+      const { data: sessData, error } = await supabase
+        .from('flow_sessions')
+        .select('id, phone, status, flow_id, last_message_at')
+        .eq('owner_id', ownerId)
+        .in('status', ['active', 'handoff'])
+        .order('last_message_at', { ascending: false })
+      if (error) throw error
 
-      // Fetch session states (needs_human, agent_active)
-      const { data: sessData } = await supabase
-        .from('customer_sessions')
-        .select('id, customer_phone_number, needs_human, agent_active')
-        .eq('chatbot_id', chatbotId)
+      // Get last message preview per phone
+      const phones = (sessData ?? []).map(s => s.phone)
+      let lastMsgMap: Record<string, { content: string; created_at: string }> = {}
+      if (phones.length > 0) {
+        const { data: logData } = await supabase
+          .from('conversation_logs')
+          .select('phone, content, created_at')
+          .eq('owner_id', ownerId)
+          .in('phone', phones)
+          .order('created_at', { ascending: false })
+        ;(logData ?? []).forEach(row => {
+          if (!lastMsgMap[row.phone]) lastMsgMap[row.phone] = { content: row.content, created_at: row.created_at }
+        })
+      }
 
-      const sessMap: Record<string, { needs_human: boolean; agent_active: boolean; id: string }> = {}
-      ;(sessData ?? []).forEach(s => {
-        sessMap[s.customer_phone_number] = { needs_human: s.needs_human, agent_active: s.agent_active, id: s.id }
-      })
-
-      // Group messages by phone
-      const map: Record<string, { last_message: string; last_message_at: string; count: number }> = {}
-      ;(msgData ?? []).forEach(row => {
-        if (!map[row.customer_phone]) {
-          map[row.customer_phone] = { last_message: row.content, last_message_at: row.created_at, count: 1 }
-        } else {
-          map[row.customer_phone].count++
-        }
-      })
-
-      const list: Contact[] = Object.entries(map).map(([phone, v]) => ({
-        customer_phone: phone,
-        last_message: v.last_message.length > 60 ? v.last_message.slice(0, 57) + '…' : v.last_message,
-        last_message_at: v.last_message_at,
-        last_message_ago: formatDistanceToNow(new Date(v.last_message_at), { addSuffix: true }),
-        total_messages: v.count,
-        needs_human: sessMap[phone]?.needs_human ?? false,
-        agent_active: sessMap[phone]?.agent_active ?? false,
-        session_id: sessMap[phone]?.id ?? null,
+      const list: InboxSession[] = (sessData ?? []).map(s => ({
+        session_id: s.id,
+        phone: s.phone,
+        status: s.status as 'active' | 'handoff',
+        flow_id: s.flow_id,
+        last_message: lastMsgMap[s.phone]?.content ?? '',
+        last_message_at: lastMsgMap[s.phone]?.created_at ?? s.last_message_at ?? '',
+        last_message_ago: lastMsgMap[s.phone]?.created_at
+          ? formatDistanceToNow(new Date(lastMsgMap[s.phone].created_at), { addSuffix: true })
+          : '',
       }))
 
-      // Escalated contacts first, then by recency
+      // Handoff sessions first, then by recency
       list.sort((a, b) => {
-        if (a.needs_human && !b.needs_human) return -1
-        if (!a.needs_human && b.needs_human) return 1
+        if (a.status === 'handoff' && b.status !== 'handoff') return -1
+        if (a.status !== 'handoff' && b.status === 'handoff') return 1
         return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
       })
 
-      setContacts(list)
+      setSessions(list)
     } catch (e) {
-      console.error('Failed to load inbox contacts:', e)
+      console.error('loadSessions error:', e)
     } finally {
-      setLoadingContacts(false)
+      setLoadingSessions(false)
     }
-  }, [chatbotId])
+  }, [ownerId])
 
-  // ── Load messages for selected contact ──────────────────────────────────
   const loadMessages = useCallback(async (phone: string) => {
-    if (!chatbotId) return
+    if (!ownerId) return
     setLoadingMessages(true)
     try {
       const { data, error } = await supabase
-        .from('messages')
+        .from('conversation_logs')
         .select('id, direction, content, msg_type, created_at')
-        .eq('chatbot_id', chatbotId)
-        .eq('customer_phone', phone)
+        .eq('owner_id', ownerId)
+        .eq('phone', phone)
         .order('created_at', { ascending: true })
       if (error) throw error
       setMessages((data ?? []) as Message[])
     } catch (e) {
-      console.error('Failed to load messages:', e)
+      console.error('loadMessages error:', e)
     } finally {
       setLoadingMessages(false)
     }
-  }, [chatbotId])
+  }, [ownerId])
 
-  // ── Take over / Release ──────────────────────────────────────────────────
-  const setAgentActive = useCallback(async (phone: string, active: boolean) => {
-    if (!chatbotId) return
+  const releaseToBot = useCallback(async (sessionId: string) => {
     await supabase
-      .from('customer_sessions')
-      .upsert({
-        chatbot_id: chatbotId,
-        customer_phone_number: phone,
-        agent_active: active,
-        needs_human: active ? false : false, // clear flag when agent takes over
-        last_activity_at: new Date().toISOString(),
-      }, { onConflict: 'chatbot_id,customer_phone_number' })
+      .from('flow_sessions')
+      .update({ status: 'active', updated_at: new Date().toISOString() })
+      .eq('id', sessionId)
+    setSessions(prev => prev.map(s => s.session_id === sessionId ? { ...s, status: 'active' as const } : s))
+  }, [])
 
-    setContacts(prev => prev.map(c =>
-      c.customer_phone === phone
-        ? { ...c, agent_active: active, needs_human: active ? false : c.needs_human }
-        : c
-    ))
-  }, [chatbotId])
+  const endChat = useCallback(async (sessionId: string) => {
+    await supabase
+      .from('flow_sessions')
+      .update({ status: 'completed', updated_at: new Date().toISOString() })
+      .eq('id', sessionId)
+    setSessions(prev => prev.filter(s => s.session_id !== sessionId))
+    setSelectedPhone(null)
+  }, [])
 
-  // ── Send message as agent ─────────────────────────────────────────────────
   const sendAgentMessage = useCallback(async (phone: string, text: string): Promise<boolean> => {
-    if (!chatbotId || !text.trim()) return false
+    if (!text.trim()) return false
     setSendingMessage(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -146,7 +136,7 @@ export function useInboxData(chatbotId: string | null) {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ to: phone, message: text.trim(), chatbot_id: chatbotId }),
+          body: JSON.stringify({ to: phone, message: text.trim() }),
         }
       )
       if (!res.ok) {
@@ -154,47 +144,86 @@ export function useInboxData(chatbotId: string | null) {
         throw new Error(err.error || 'Send failed')
       }
 
-      // Optimistically add message to thread
-      const optimistic: Message = {
+      // Optimistic local update
+      setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         direction: 'outbound',
         content: text.trim(),
         msg_type: 'agent',
         created_at: new Date().toISOString(),
-      }
-      setMessages(prev => [...prev, optimistic])
+      }])
       return true
-    } catch (e: any) {
+    } catch (e) {
       console.error('sendAgentMessage error:', e)
       return false
     } finally {
       setSendingMessage(false)
     }
-  }, [chatbotId])
+  }, [])
 
-  useEffect(() => { loadContacts() }, [loadContacts])
+  // Real-time subscription to conversation_logs
+  useEffect(() => {
+    if (!ownerId) return
+    const ch = supabase
+      .channel(`inbox-${ownerId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'conversation_logs',
+        filter: `owner_id=eq.${ownerId}`,
+      }, (payload) => {
+        const row = payload.new as {
+          phone: string; content: string; direction: string
+          msg_type: string; created_at: string; id: string
+        }
+        // Update session last message preview
+        setSessions(prev => prev.map(s =>
+          s.phone === row.phone
+            ? { ...s, last_message: row.content, last_message_at: row.created_at, last_message_ago: 'just now' }
+            : s
+        ))
+        // Append to message thread if this phone is selected
+        setSelectedPhone(current => {
+          if (current === row.phone) {
+            setMessages(prev => [...prev, {
+              id: row.id,
+              direction: row.direction as 'inbound' | 'outbound',
+              content: row.content,
+              msg_type: row.msg_type,
+              created_at: row.created_at,
+            }])
+          }
+          return current
+        })
+      })
+      .subscribe()
+    realtimeRef.current = ch
+    return () => { supabase.removeChannel(ch) }
+  }, [ownerId])
 
+  useEffect(() => { loadSessions() }, [loadSessions])
   useEffect(() => {
     if (selectedPhone) loadMessages(selectedPhone)
     else setMessages([])
   }, [selectedPhone, loadMessages])
 
-  const filteredContacts = search.trim()
-    ? contacts.filter(c => c.customer_phone.includes(search.trim()))
-    : contacts
+  const filteredSessions = search.trim()
+    ? sessions.filter(s => s.phone.includes(search.trim()))
+    : sessions
 
   return {
-    contacts: filteredContacts,
+    sessions: filteredSessions,
     messages,
     selectedPhone,
     setSelectedPhone,
-    loadingContacts,
+    loadingSessions,
     loadingMessages,
     sendingMessage,
     search,
     setSearch,
-    refresh: loadContacts,
-    setAgentActive,
+    refresh: loadSessions,
+    releaseToBot,
+    endChat,
     sendAgentMessage,
   }
 }
