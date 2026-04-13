@@ -12,6 +12,7 @@ import {
   type XYPosition,
 } from '@xyflow/react'
 import { supabase } from '@/integrations/supabase/client'
+import { deleteFlowMediaPrefix, deleteFlowNodeMedia, getUploadedStoragePaths } from '@/features/flow-media/uploadFlowNodeMedia'
 import { applyFlowTemplate as applyFlowTemplateService } from '@/features/flow-templates/services/applyFlowTemplate'
 import { trackTemplateEvent } from '@/features/flow-templates/services/templateEvents'
 import type {
@@ -303,18 +304,20 @@ export function useFlowBuilder(ownerId: string | null) {
   }, [setRfNodes])
 
   const deleteNode = useCallback(async (nodeId: string) => {
+    const nodeToDelete = dbNodes.find((node) => node.id === nodeId)
     const { error } = await (supabase.from('flow_nodes') as any)
       .delete()
       .eq('id', nodeId)
 
     if (error) throw error
+    await deleteFlowNodeMedia(getUploadedStoragePaths(nodeToDelete?.config ?? {}))
 
     setDbNodes((prev) => prev.filter((node) => node.id !== nodeId))
     setDbEdges((prev) => prev.filter((edge) => edge.source_node_id !== nodeId && edge.target_node_id !== nodeId))
     setRfNodes((prev) => prev.filter((node) => node.id !== nodeId))
     setRfEdges((prev) => prev.filter((edge) => edge.source !== nodeId && edge.target !== nodeId))
     setSelectedNodeId(null)
-  }, [setRfEdges, setRfNodes])
+  }, [dbNodes, setRfEdges, setRfNodes])
 
   const updateEdge = useCallback(async (edgeId: string, params: Partial<FlowEdge>) => {
     const { error } = await (supabase.from('flow_edges') as any)
@@ -375,14 +378,19 @@ export function useFlowBuilder(ownerId: string | null) {
   }, [])
 
   const deleteFlow = useCallback(async (flowId: string) => {
+    const knownMediaPaths = selectedFlowId === flowId
+      ? dbNodes.flatMap((node) => getUploadedStoragePaths(node.config ?? {}))
+      : []
     const { error } = await (supabase.from('flows') as any)
       .delete()
       .eq('id', flowId)
 
     if (error) throw error
+    await deleteFlowNodeMedia(knownMediaPaths)
+    await deleteFlowMediaPrefix(ownerId, flowId)
     setFlows((prev) => prev.filter((flow) => flow.id !== flowId))
     if (selectedFlowId === flowId) clearFlowState()
-  }, [clearFlowState, selectedFlowId])
+  }, [clearFlowState, dbNodes, ownerId, selectedFlowId])
 
   const publishFlow = useCallback(async (flowId: string) => {
     const startNode = dbNodes.find((node) => node.node_type === 'start')
@@ -391,9 +399,15 @@ export function useFlowBuilder(ownerId: string | null) {
       .eq('id', flowId)
 
     if (error) throw error
+    const { error: triggerError } = await (supabase.from('flow_triggers') as any)
+      .update({ is_active: true })
+      .eq('flow_id', flowId)
+
+    if (triggerError) throw triggerError
     setFlows((prev) => prev.map((flow) => flow.id === flowId
       ? { ...flow, status: 'published', entry_node_id: startNode?.id ?? flow.entry_node_id }
       : flow))
+    setTriggers((prev) => prev.map((trigger) => trigger.flow_id === flowId ? { ...trigger, is_active: true } : trigger))
   }, [dbNodes])
 
   const unpublishFlow = useCallback(async (flowId: string) => {
@@ -402,7 +416,13 @@ export function useFlowBuilder(ownerId: string | null) {
       .eq('id', flowId)
 
     if (error) throw error
+    const { error: triggerError } = await (supabase.from('flow_triggers') as any)
+      .update({ is_active: false })
+      .eq('flow_id', flowId)
+
+    if (triggerError) throw triggerError
     setFlows((prev) => prev.map((flow) => flow.id === flowId ? { ...flow, status: 'draft' } : flow))
+    setTriggers((prev) => prev.map((trigger) => trigger.flow_id === flowId ? { ...trigger, is_active: false } : trigger))
   }, [])
 
   const addTrigger = useCallback(async (trigger: Omit<FlowTrigger, 'id' | 'owner_id' | 'created_at'>) => {
