@@ -18,13 +18,13 @@ const baseNavItems = [
   { title: 'Inbox', url: '/dashboard/inbox', icon: Inbox },
   { title: 'Contacts', url: '/dashboard/contacts', icon: Users },
   { title: 'Analytics', url: '/dashboard/analytics', icon: BarChart3 },
+  { title: 'Help', url: '/dashboard/help', icon: HelpCircle },
   { title: 'Settings', url: '/dashboard/settings', icon: Settings2 },
   { title: 'Billing', url: '/dashboard/billing', icon: CreditCard },
 ]
 
 const futureItems = [
   { title: 'Audit Logs', url: '#', icon: ScrollText, disabled: true },
-  { title: 'Help', url: '#', icon: HelpCircle, disabled: true },
 ]
 
 export function DashboardSidebar() {

@@ -22,6 +22,7 @@ import InboxPage from "./components/dashboard/inbox/InboxPage";
 import ContactsPage from "./components/dashboard/contacts/ContactsPage";
 import ClientsPage from "./components/dashboard/clients/ClientsPage"
 import BroadcastPage from "./components/dashboard/broadcast/BroadcastPage";
+import HelpPage from "@/components/dashboard/help/HelpPage";
 import AdminOverview from "./components/admin/pages/AdminOverview";
 import AdminUsers from "./components/admin/pages/AdminUsers";
 import AdminRevenue from "./components/admin/pages/AdminRevenue";
@@ -55,6 +56,7 @@ const App = () => (
             <Route path="contacts" element={<ContactsPage />} />
             <Route path="clients" element={<ClientsPage />} />
             <Route path="broadcast" element={<BroadcastPage />} />
+            <Route path="help" element={<HelpPage />} />
           </Route>
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminOverview />} />
