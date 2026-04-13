@@ -53,6 +53,30 @@ describe('executeMessageNode', () => {
     expect(result.consumes_input).toBe(false)
   })
 
+  it('returns an interactive button message when quick replies are configured', () => {
+    const node = makeNode('message', {
+      text: 'Pick an option',
+      buttons: [
+        { id: 'btn-1', title: 'Pricing' },
+        { id: 'btn-2', title: 'Demo' },
+        { id: 'btn-3', title: 'Support' },
+        { id: 'btn-4', title: 'Ignored' },
+      ],
+    })
+
+    const result = executeMessageNode(node, makeSession(), '')
+
+    expect(result.messages).toEqual([{
+      type: 'interactive',
+      body: 'Pick an option',
+      buttons: [
+        { id: 'btn-1', title: 'Pricing' },
+        { id: 'btn-2', title: 'Demo' },
+        { id: 'btn-3', title: 'Support' },
+      ],
+    }])
+  })
+
   it('includes attachment messages when config.attachments is set', () => {
     const node = makeNode('message', {
       text: 'Here is your image',
@@ -67,7 +91,55 @@ describe('executeMessageNode', () => {
   it('handles missing text gracefully', () => {
     const node = makeNode('message', {})
     const result = executeMessageNode(node, makeSession(), '')
-    expect(result.messages).toEqual([{ type: 'text', text: '' }])
+    expect(result.messages).toEqual([])
+  })
+
+  it('sends attachments, text, then consolidated links in deterministic order', () => {
+    const node = makeNode('message', {
+      text: 'Details below',
+      attachments: [
+        { type: 'image', url: 'https://example.com/a.jpg', caption: 'A' },
+        { type: 'document', url: 'https://example.com/menu.pdf' },
+      ],
+      links: [
+        { label: 'Watch', url: 'https://youtube.com/watch?v=abc' },
+        { url: 'https://example.com' },
+      ],
+    })
+
+    const result = executeMessageNode(node, makeSession(), '')
+
+    expect(result.messages).toEqual([
+      { type: 'image', url: 'https://example.com/a.jpg', caption: 'A' },
+      { type: 'document', url: 'https://example.com/menu.pdf', caption: undefined },
+      { type: 'text', text: 'Details below' },
+      { type: 'text', text: 'Watch: https://youtube.com/watch?v=abc\nhttps://example.com' },
+    ])
+  })
+
+  it('supports legacy media_url/media_type during the transition', () => {
+    const node = makeNode('message', {
+      text: 'Legacy media',
+      media_url: 'https://example.com/legacy.pdf',
+      media_type: 'document',
+    })
+
+    const result = executeMessageNode(node, makeSession(), '')
+
+    expect(result.messages).toEqual([
+      { type: 'document', url: 'https://example.com/legacy.pdf', caption: undefined },
+      { type: 'text', text: 'Legacy media' },
+    ])
+  })
+
+  it('sends links even when message text is empty', () => {
+    const node = makeNode('message', {
+      links: [{ label: 'Open', url: 'https://example.com' }],
+    })
+
+    const result = executeMessageNode(node, makeSession(), '')
+
+    expect(result.messages).toEqual([{ type: 'text', text: 'Open: https://example.com' }])
   })
 })
 

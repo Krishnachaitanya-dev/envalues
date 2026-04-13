@@ -199,6 +199,23 @@ async function sendWhatsAppMessage(to: string, msg: OutboundMessage, creds: { ac
       type: 'text',
       text: { preview_url: false, body: msg.text ?? '' },
     }
+  } else if (msg.type === 'interactive') {
+    payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: msg.body ?? '' },
+        action: {
+          buttons: (msg.buttons ?? []).map(b => ({
+            type: 'reply',
+            reply: { id: b.id, title: b.title },
+          })),
+        },
+      },
+    }
   } else {
     const mediaPayload: Record<string, unknown> = { link: msg.url }
     if (msg.caption) mediaPayload.caption = msg.caption

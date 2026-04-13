@@ -64,10 +64,12 @@ export interface FlowSession {
 }
 
 export interface OutboundMessage {
-  type: 'text' | 'image' | 'video' | 'document'
+  type: 'text' | 'image' | 'video' | 'document' | 'interactive'
   text?: string
   url?: string
   caption?: string
+  body?: string
+  buttons?: Array<{ id: string; title: string }>
 }
 
 export interface NodeResult {
@@ -81,8 +83,12 @@ export interface NodeResult {
 // ── Node config contracts ──────────────────────────────────────────────────────
 
 export interface MessageConfig {
-  text: string
-  attachments?: Array<{ type: string; url: string; caption?: string }>
+  text?: string
+  attachments?: Array<{ type: string; url: string; caption?: string; storage_path?: string; source?: string }>
+  links?: Array<{ id?: string; url: string; label?: string }>
+  media_url?: string
+  media_type?: 'image' | 'video' | 'document'
+  buttons?: Array<{ id: string; title: string }>
 }
 
 export interface InputConfig {

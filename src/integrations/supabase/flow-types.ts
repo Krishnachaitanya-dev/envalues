@@ -71,7 +71,21 @@ export interface FlowTrigger {
 
 // Config shapes per node type (stored as FlowNode.config)
 export interface StartConfig   { greeting_message?: string }
-export interface MessageConfig { text: string; media_url?: string; media_type?: 'image' | 'video' | 'document' }
+export interface MessageConfig {
+  text?: string
+  attachments?: Array<{
+    id?: string
+    type: 'image' | 'video' | 'document'
+    url: string
+    caption?: string
+    storage_path?: string
+    source?: 'upload' | 'url'
+  }>
+  links?: Array<{ id?: string; url: string; label?: string }>
+  media_url?: string
+  media_type?: 'image' | 'video' | 'document'
+  buttons?: Array<{ id: string; title: string }>
+}
 export interface InputConfig   { prompt: string; variable: string; timeout_seconds?: number }
 export interface ConditionConfig { /* empty — logic lives in edges */ }
 export interface ApiConfig     { url: string; method: 'GET'|'POST'|'PUT'|'DELETE'; headers?: Record<string,string>; body?: string; response_variable?: string }

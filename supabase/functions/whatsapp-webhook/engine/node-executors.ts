@@ -27,24 +27,55 @@ export function executeStartNode(_node: FlowNode, _session: FlowSession, _inboun
 // ── message ───────────────────────────────────────────────────────────────────
 
 export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbound: string): NodeResult {
-  const config = node.config as MessageConfig
+  const config = node.config as unknown as MessageConfig
   const messages: OutboundMessage[] = []
+  const attachments = Array.isArray(config.attachments) && config.attachments.length > 0
+    ? config.attachments
+    : config.media_url
+      ? [{ type: config.media_type ?? 'document', url: config.media_url }]
+      : []
 
-  // Attachments sent before text (media first, then caption)
-  if (config.attachments && config.attachments.length > 0) {
-    for (const att of config.attachments) {
+  // Deterministic order: attachments first, then text, then consolidated links.
+  if (attachments.length > 0) {
+    for (const att of attachments) {
+      if (!att.url) continue
       messages.push({ type: att.type as OutboundMessage['type'], url: att.url, caption: att.caption })
     }
   }
 
-  messages.push({ type: 'text', text: config.text ?? '' })
+  if (config.text) {
+    const buttons = Array.isArray(config.buttons)
+      ? config.buttons
+        .filter((button) => button.id && button.title)
+        .slice(0, 3)
+      : []
+
+    if (buttons.length > 0) {
+      messages.push({
+        type: 'interactive',
+        body: config.text,
+        buttons,
+      })
+    } else {
+      messages.push({ type: 'text', text: config.text })
+    }
+  }
+
+  if (config.links && config.links.length > 0) {
+    const linkText = config.links
+      .filter((link) => link.url)
+      .map((link) => link.label ? `${link.label}: ${link.url}` : link.url)
+      .join('\n')
+    if (linkText) messages.push({ type: 'text', text: linkText })
+  }
+
   return emptyResult({ messages })
 }
 
 // ── end ───────────────────────────────────────────────────────────────────────
 
 export function executeEndNode(node: FlowNode, session: FlowSession): NodeResult {
-  const config = node.config as EndConfig
+  const config = node.config as unknown as EndConfig
 
   if (session.call_stack.length > 0) {
     const frame = session.call_stack.pop()!
@@ -66,7 +97,7 @@ export function executeEndNode(node: FlowNode, session: FlowSession): NodeResult
 // ── input ─────────────────────────────────────────────────────────────────────
 
 export function executeInputNode(node: FlowNode, session: FlowSession, inbound: string): NodeResult {
-  const config = node.config as InputConfig
+  const config = node.config as unknown as InputConfig
   const context_updates: Record<string, unknown> = {}
 
   // Validate if configured
@@ -106,7 +137,7 @@ export function executeConditionNode(_node: FlowNode, _session: FlowSession, _in
 // ── delay ─────────────────────────────────────────────────────────────────────
 
 export function executeDelayNode(node: FlowNode, _session: FlowSession, _inbound: string): NodeResult {
-  const config = node.config as DelayConfig
+  const config = node.config as unknown as DelayConfig
   void config.delay_secs
   return emptyResult()
 }
@@ -114,7 +145,7 @@ export function executeDelayNode(node: FlowNode, _session: FlowSession, _inbound
 // ── jump ──────────────────────────────────────────────────────────────────────
 
 export function executeJumpNode(node: FlowNode, session: FlowSession, _inbound: string): NodeResult {
-  const config = node.config as JumpConfig
+  const config = node.config as unknown as JumpConfig
 
   if (config.target_flow_id && config.target_flow_id !== session.flow_id) {
     session.flow_id = config.target_flow_id
@@ -135,7 +166,7 @@ export function executeSubflowNode(
   _inbound: string,
   subflowEntryNodeId: string,
 ): NodeResult {
-  const config = node.config as SubflowConfig
+  const config = node.config as unknown as SubflowConfig
 
   if (session.call_stack.length >= 10) {
     return emptyResult({
@@ -170,7 +201,7 @@ export function executeSubflowNode(
 // ── handoff ───────────────────────────────────────────────────────────────────
 
 export function executeHandoffNode(node: FlowNode, _session: FlowSession, _inbound: string): NodeResult {
-  const config = node.config as HandoffConfig
+  const config = node.config as unknown as HandoffConfig
 
   return emptyResult({
     messages: [{ type: 'text', text: config.message || 'Connecting you to our team...' }],
@@ -190,7 +221,7 @@ export async function executeApiNode(
   _inbound: string,
   fetchFn: typeof fetch,
 ): Promise<NodeResult> {
-  const config = node.config as ApiConfig
+  const config = node.config as unknown as ApiConfig
 
   const body = (config.body_template || '').replace(
     /\{\{context\.([^}]+)\}\}/g,
