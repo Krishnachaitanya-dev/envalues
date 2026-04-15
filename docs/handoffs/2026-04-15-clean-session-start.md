@@ -12,9 +12,11 @@ The GitHub repo is:
 
 `https://github.com/Krishnachaitanya-dev/envalues`
 
-The active branch is:
+The active day-to-day branch is:
 
-`infra/clean-repo-bootstrap-2026-04-15`
+`feat/phase3-cicd-infra`
+
+Use `feat/phase3-cicd-infra` for normal follow-up work after this setup checkpoint. The `infra/clean-repo-bootstrap-2026-04-15` branch remains as the bootstrap/review branch.
 
 ## Current Local Setup
 
