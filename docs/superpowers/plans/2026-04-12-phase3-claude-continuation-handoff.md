@@ -504,6 +504,62 @@ These are not blockers for the current verified build, but Claude should know th
 5. Consider code-splitting the builder/template picker later because Vite reports a large bundle chunk.
 6. Update Browserslist data when convenient; this is a maintenance warning, not a Phase 3 blocker.
 
+## 2026-04-12 Media Upload And Builder UX Addendum
+
+After the production-grade template work, Phase 3 builder media uploads and the WATI-style editing layout were implemented.
+
+New media/storage migration:
+
+- `supabase/migrations/20260412001000_chatbot_media_storage.sql`
+
+New media helper:
+
+- `src/features/flow-media/uploadFlowNodeMedia.ts`
+
+Key implementation details:
+
+- Uses the shared public Supabase Storage bucket `chatbot-media`.
+- Owner media paths use `owner_id/flows/flow_id/nodes/node_id/random_id.ext`.
+- Storage policies use exact first path segment matching against `auth.uid()`.
+- Admin brand logo policies remain separate under `brand-logos/**`.
+- Object names use random IDs, not original filenames.
+- Client validation covers MIME, extension, MIME/extension consistency, file size, attachment count, caption length, and light magic-byte checks for images/PDFs.
+- Message media source of truth is now `config.attachments` plus `config.links`.
+- Legacy `media_url` / `media_type` is read and normalized in the UI and still supported by the webhook executor during transition.
+- The webhook executor sends attachments first, then non-empty text, then one consolidated links text message.
+- Node deletion and flow deletion attempt best-effort cleanup of known uploaded `storage_path`s.
+- The Phase 3 builder no longer renders a permanent empty right panel.
+- Node and edge editors are slide-over panels with dirty-state close protection.
+- The canvas node toolbar is now a grouped `Add node` menu.
+
+Additional tests added:
+
+- `src/test/flow-media/storage-migration-contract.test.ts`
+- `src/test/flow-media/uploadFlowNodeMedia.test.ts`
+- `src/test/flow-builder/NodeConfigPanel.test.tsx`
+- `src/test/flow-builder/builder-layout-source.test.ts`
+
+Verification after this addendum:
+
+```powershell
+npm test -- --run
+npm run build
+```
+
+Results:
+
+- Tests: `19` test files passed.
+- Test count: `145` tests passed.
+- Build: passed.
+- Known non-blocking warnings remain: old Browserslist data and large Vite chunk.
+
+Runtime note:
+
+- Apply both `20260412000000_flow_template_catalog.sql` and `20260412001000_chatbot_media_storage.sql` to Supabase before smoke testing templates/uploads.
+- Uploaded media is public by URL. Do not represent it as private document storage.
+- If applying `20260412001000_chatbot_media_storage.sql` through the hosted Supabase SQL editor fails with `ERROR: 42501: must be owner of relation objects`, do not change ownership of `storage.objects`.
+- In that case, keep the migration as CLI/admin source of truth and apply the bucket + object policies through Supabase Dashboard Storage policy UI using `docs/superpowers/plans/2026-04-12-supabase-storage-manual-deployment.md`.
+
 ## Safe Resume Checklist For Claude
 
 Read these files first:
@@ -532,4 +588,3 @@ Do not:
 - Switch selected flow before the template RPC succeeds.
 - Make template triggers active by default.
 - Remove provenance fields from created template flows.
-

@@ -87,15 +87,15 @@ export default function Signup() {
   const errorInputCls = "w-full px-4 py-2.5 rounded-xl bg-surface-raised border border-destructive text-foreground focus:border-destructive focus:ring-2 focus:ring-destructive/20 outline-none transition-all";
 
   return (
-    <div className="min-h-screen bg-background bg-noise flex items-center justify-center px-4 relative">
-      <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-primary/5 rounded-full blur-[120px] pointer-events-none" />
+    <div className="min-h-[100dvh] bg-background bg-noise flex items-center justify-center px-3 sm:px-4 py-6 sm:py-10 relative overflow-hidden safe-area-page">
+      <div className="absolute bottom-0 left-0 w-72 h-72 sm:w-[400px] sm:h-[400px] bg-primary/5 rounded-full blur-[120px] pointer-events-none" />
 
-      <div className="w-full max-w-md space-y-8 animate-fade-in-up">
+      <div className="w-full max-w-md space-y-6 sm:space-y-8 animate-fade-in-up">
         <div className="text-center space-y-2">
           <img src="/envalues-logo.png" alt="Envalues" className="h-12 w-auto mx-auto" />
         </div>
 
-        <div className="bg-card border border-border rounded-2xl p-8 space-y-6">
+        <div className="bg-card border border-border rounded-2xl p-5 sm:p-8 space-y-6">
           <div className="text-center">
             <h2 className="font-display font-bold text-2xl text-foreground">Create your account</h2>
             <p className="text-muted-foreground text-sm mt-1">Free to sign up. Pay only when you go live.</p>

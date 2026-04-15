@@ -16,7 +16,7 @@ describe('stock flow templates', () => {
       expect(validateTemplateGraph(template)).toEqual([])
       expect(template.nodes.filter(node => node.type === 'start')).toHaveLength(1)
       expect(template.nodes.some(node => node.type === 'handoff')).toBe(true)
-      expect(template.nodes.some(node => node.type === 'end')).toBe(true)
+      expect(template.nodes.some(node => node.type === 'end' || node.type === 'handoff')).toBe(true)
     }
   })
 
@@ -37,6 +37,23 @@ describe('stock flow templates', () => {
         .map(trigger => `${trigger.type}:${normalizeTemplateTrigger(trigger.value)}`)
       expect(new Set(keys).size).toBe(keys.length)
     }
+  })
+
+  it('routes detail-collection options through input nodes before handoff', () => {
+    const gym = stockFlowTemplates.find(template => template.id === 'gym_fitness_studio')!
+    const trialNode = gym.nodes.find(node => node.id === 'secondary')!
+    const trialEdge = gym.edges.find(edge => edge.id === 'edge_secondary_after')!
+    const menuEdge = gym.edges.find(edge => edge.id === 'edge_menu_secondary')!
+
+    expect(trialNode.type).toBe('input')
+    expect(trialNode.data).toMatchObject({
+      prompt: 'Share your name, goal, and preferred time. Our team will confirm the trial slot.',
+      store_as: 'secondary_response',
+      timeout_secs: 300,
+    })
+    expect(trialEdge.target).toBe('handoff')
+    expect(menuEdge.condition.type).toBe('regex')
+    expect(menuEdge.condition.value).toContain('trial session')
   })
 
   it('rejects invalid template fixtures', () => {

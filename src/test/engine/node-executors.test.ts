@@ -83,9 +83,35 @@ describe('executeMessageNode', () => {
       attachments: [{ type: 'image', url: 'https://example.com/img.jpg', caption: 'Test' }],
     })
     const result = executeMessageNode(node, makeSession(), '')
-    expect(result.messages).toHaveLength(2)
-    expect(result.messages[0]).toEqual({ type: 'image', url: 'https://example.com/img.jpg', caption: 'Test' })
-    expect(result.messages[1]).toEqual({ type: 'text', text: 'Here is your image' })
+    expect(result.messages).toEqual([
+      {
+        type: 'image',
+        url: 'https://example.com/img.jpg',
+        caption: 'Here is your image\n\nTest',
+      },
+    ])
+  })
+
+  it('keeps media, text, links, and quick replies together as one interactive media message', () => {
+    const node = makeNode('message', {
+      text: 'Plan details',
+      attachments: [{ type: 'image', url: 'https://example.com/plan.jpg', caption: 'Limited offer' }],
+      links: [{ label: 'Website', url: 'https://example.com' }],
+      buttons: [{ id: 'btn-1', title: '1000 per month' }],
+    })
+
+    const result = executeMessageNode(node, makeSession(), '')
+
+    expect(result.messages).toEqual([{
+      type: 'interactive',
+      body: 'Plan details\n\nWebsite: https://example.com\n\nLimited offer',
+      buttons: [{ id: 'btn-1', title: '1000 per month' }],
+      header: {
+        type: 'image',
+        url: 'https://example.com/plan.jpg',
+        filename: undefined,
+      },
+    }])
   })
 
   it('handles missing text gracefully', () => {
@@ -94,7 +120,7 @@ describe('executeMessageNode', () => {
     expect(result.messages).toEqual([])
   })
 
-  it('sends attachments, text, then consolidated links in deterministic order', () => {
+  it('sends message text and links as the first media caption when attachments exist', () => {
     const node = makeNode('message', {
       text: 'Details below',
       attachments: [
@@ -110,10 +136,12 @@ describe('executeMessageNode', () => {
     const result = executeMessageNode(node, makeSession(), '')
 
     expect(result.messages).toEqual([
-      { type: 'image', url: 'https://example.com/a.jpg', caption: 'A' },
+      {
+        type: 'image',
+        url: 'https://example.com/a.jpg',
+        caption: 'Details below\n\nWatch: https://youtube.com/watch?v=abc\nhttps://example.com\n\nA',
+      },
       { type: 'document', url: 'https://example.com/menu.pdf', caption: undefined },
-      { type: 'text', text: 'Details below' },
-      { type: 'text', text: 'Watch: https://youtube.com/watch?v=abc\nhttps://example.com' },
     ])
   })
 
@@ -127,8 +155,20 @@ describe('executeMessageNode', () => {
     const result = executeMessageNode(node, makeSession(), '')
 
     expect(result.messages).toEqual([
-      { type: 'document', url: 'https://example.com/legacy.pdf', caption: undefined },
-      { type: 'text', text: 'Legacy media' },
+      { type: 'document', url: 'https://example.com/legacy.pdf', caption: 'Legacy media' },
+    ])
+  })
+
+  it('keeps text and links together as one text message when there is no media', () => {
+    const node = makeNode('message', {
+      text: 'Read more',
+      links: [{ label: 'Open', url: 'https://example.com' }],
+    })
+
+    const result = executeMessageNode(node, makeSession(), '')
+
+    expect(result.messages).toEqual([
+      { type: 'text', text: 'Read more\n\nOpen: https://example.com', preview_url: true },
     ])
   })
 
@@ -139,7 +179,7 @@ describe('executeMessageNode', () => {
 
     const result = executeMessageNode(node, makeSession(), '')
 
-    expect(result.messages).toEqual([{ type: 'text', text: 'Open: https://example.com' }])
+    expect(result.messages).toEqual([{ type: 'text', text: 'Open: https://example.com', preview_url: true }])
   })
 })
 

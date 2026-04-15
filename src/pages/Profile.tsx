@@ -115,27 +115,27 @@ export default function Profile() {
   )
 
   return (
-    <div className="min-h-screen bg-background bg-noise">
+    <div className="min-h-screen bg-background bg-noise overflow-x-hidden">
       {/* Navbar */}
       <nav className="h-16 bg-surface-raised border-b border-border">
-        <div className="max-w-2xl mx-auto px-6 h-full flex items-center justify-between">
-          <Link to="/dashboard" className="flex items-center gap-2 text-primary hover:underline text-sm font-medium">
+        <div className="max-w-2xl mx-auto px-3 sm:px-6 h-full flex items-center justify-between gap-3">
+          <Link to="/dashboard" className="flex items-center gap-2 text-primary hover:underline text-sm font-medium min-w-0">
             <ArrowLeft size={16} /> Back to Dashboard
           </Link>
-          <button onClick={handleLogout} className="flex items-center gap-2 text-destructive hover:text-destructive/80 text-sm font-medium transition-colors">
+          <button onClick={handleLogout} className="flex items-center gap-2 text-destructive hover:text-destructive/80 text-sm font-medium transition-colors shrink-0">
             <LogOut size={16} /> Logout
           </button>
         </div>
       </nav>
 
-      <div className="max-w-2xl mx-auto px-6 py-8 space-y-6">
-        <h1 className="font-display font-bold text-2xl text-foreground">Account Settings</h1>
+      <div className="max-w-2xl mx-auto px-3 sm:px-6 py-5 sm:py-8 space-y-5 sm:space-y-6 safe-area-page">
+        <h1 className="font-display font-bold text-xl sm:text-2xl text-foreground">Account Settings</h1>
 
         {error && <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-xl text-sm">{error}</div>}
         {success && <div className="bg-primary/10 border border-primary/20 text-primary px-4 py-3 rounded-xl text-sm">{success}</div>}
 
         {/* Profile Info */}
-        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
+        <div className="bg-card border border-border rounded-2xl p-4 sm:p-6 space-y-4">
           <h2 className="font-display font-bold text-lg text-foreground">Profile Information</h2>
           <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center text-primary font-display font-bold text-2xl">
             {formData.full_name?.charAt(0)?.toUpperCase() || '?'}
@@ -173,7 +173,7 @@ export default function Profile() {
               )}
             </div>
             <button type="submit" disabled={saving}
-              className="px-6 py-2.5 rounded-full bg-primary text-primary-foreground font-bold hover:scale-[1.03] hover:glow-green transition-all disabled:opacity-50 disabled:scale-100 flex items-center gap-2">
+              className="w-full sm:w-auto justify-center px-6 py-2.5 rounded-full bg-primary text-primary-foreground font-bold hover:scale-[1.03] hover:glow-green transition-all disabled:opacity-50 disabled:scale-100 flex items-center gap-2">
               {saving && <Loader2 size={16} className="animate-spin" />}
               Save Changes
             </button>
@@ -181,7 +181,7 @@ export default function Profile() {
         </div>
 
         {/* Change Password */}
-        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
+        <div className="bg-card border border-border rounded-2xl p-4 sm:p-6 space-y-4">
           <h2 className="font-display font-bold text-lg text-foreground">Change Password</h2>
           <form onSubmit={handleUpdatePassword} className="space-y-4">
             <div>
@@ -217,7 +217,7 @@ export default function Profile() {
               )}
             </div>
             <button type="submit" disabled={saving}
-              className="px-6 py-2.5 rounded-full bg-primary text-primary-foreground font-bold hover:scale-[1.03] hover:glow-green transition-all disabled:opacity-50 disabled:scale-100 flex items-center gap-2">
+              className="w-full sm:w-auto justify-center px-6 py-2.5 rounded-full bg-primary text-primary-foreground font-bold hover:scale-[1.03] hover:glow-green transition-all disabled:opacity-50 disabled:scale-100 flex items-center gap-2">
               {saving && <Loader2 size={16} className="animate-spin" />}
               Update Password
             </button>
@@ -225,16 +225,16 @@ export default function Profile() {
         </div>
 
         {/* Account ID */}
-        <div className="bg-card border border-border rounded-2xl p-6">
+        <div className="bg-card border border-border rounded-2xl p-4 sm:p-6">
           <h2 className="font-display font-bold text-lg text-foreground mb-2">Account ID</h2>
-          <p className="text-muted-foreground text-xs font-mono">{user?.id}</p>
+          <p className="text-muted-foreground text-xs font-mono break-all">{user?.id}</p>
         </div>
 
         {/* Danger Zone */}
-        <div className="border border-destructive/30 rounded-2xl p-6 space-y-3">
+        <div className="border border-destructive/30 rounded-2xl p-4 sm:p-6 space-y-3">
           <h2 className="font-display font-bold text-lg text-destructive">Danger Zone</h2>
           <p className="text-muted-foreground text-sm">Once you delete your account, there is no going back.</p>
-          <button className="px-6 py-2.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 font-bold hover:bg-destructive/20 transition-all text-sm">
+          <button className="w-full sm:w-auto px-6 py-2.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20 font-bold hover:bg-destructive/20 transition-all text-sm">
             Delete Account
           </button>
         </div>

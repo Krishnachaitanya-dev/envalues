@@ -20,9 +20,10 @@ interface EdgeConfigPanelProps {
   onClose: () => void
   onUpdate: (edgeId: string, params: Partial<FlowEdge>) => Promise<void>
   onDelete: (edgeId: string) => Promise<void>
+  onDirtyChange?: (dirty: boolean) => void
 }
 
-export default function EdgeConfigPanel({ edge, onClose, onUpdate, onDelete }: EdgeConfigPanelProps) {
+export default function EdgeConfigPanel({ edge, onClose, onUpdate, onDelete, onDirtyChange }: EdgeConfigPanelProps) {
   const [condType, setCondType] = useState<ConditionType>('always')
   const [condValue, setCondValue] = useState('')
   const [condVar, setCondVar] = useState('')
@@ -31,9 +32,13 @@ export default function EdgeConfigPanel({ edge, onClose, onUpdate, onDelete }: E
   const [priority, setPriority] = useState(0)
   const [label, setLabel] = useState('')
   const [saving, setSaving] = useState(false)
+  const [initialSnapshot, setInitialSnapshot] = useState('')
 
   useEffect(() => {
-    if (!edge) return
+    if (!edge) {
+      onDirtyChange?.(false)
+      return
+    }
     setCondType(edge.condition_type)
     setCondValue(edge.condition_value ?? '')
     setCondVar(edge.condition_variable ?? '')
@@ -41,7 +46,38 @@ export default function EdgeConfigPanel({ edge, onClose, onUpdate, onDelete }: E
     setIsFallback(edge.is_fallback)
     setPriority(edge.priority)
     setLabel(edge.label ?? '')
+    setInitialSnapshot(snapshotEdge(edge))
+    onDirtyChange?.(false)
   }, [edge?.id])
+
+  const currentSnapshot = JSON.stringify({
+    condition_type: condType,
+    condition_value: condValue,
+    condition_variable: condVar,
+    condition_expression: condExpression,
+    is_fallback: isFallback,
+    priority,
+    label,
+  })
+  const dirty = Boolean(edge) && currentSnapshot !== initialSnapshot
+
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') handleClose()
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  })
+
+  const handleClose = () => {
+    if (dirty && !confirm('Discard unsaved edge changes?')) return
+    onDirtyChange?.(false)
+    onClose()
+  }
 
   const handleSave = async () => {
     if (!edge) return
@@ -56,41 +92,39 @@ export default function EdgeConfigPanel({ edge, onClose, onUpdate, onDelete }: E
         priority,
         label: label || null,
       })
+      setInitialSnapshot(currentSnapshot)
+      onDirtyChange?.(false)
     } finally {
       setSaving(false)
     }
   }
 
   if (!edge) {
-    return (
-      <aside className="w-72 shrink-0 border-l border-border bg-surface-raised flex items-center justify-center">
-        <p className="text-xs text-muted-foreground text-center px-6">Click an edge to configure its condition.</p>
-      </aside>
-    )
+    return null
   }
 
   const needsValue = condType !== 'always'
   const needsVar = condType === 'variable_equals' || condType === 'variable_contains'
 
   return (
-    <aside className="w-72 shrink-0 border-l border-border bg-surface-raised flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
+    <aside className="fixed inset-x-0 sm:left-auto sm:right-0 top-[52px] bottom-0 z-40 mobile-sheet border-l border-border bg-surface-raised shadow-2xl flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/80 backdrop-blur">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Routing</p>
-          <h2 className="text-sm font-bold text-foreground">Edge condition</h2>
+          <h2 className="text-base font-bold text-foreground">Edge condition</h2>
         </div>
-        <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground">
+        <button onClick={handleClose} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground">
           <X size={14} />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        <div>
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3">
+        <div className="rounded-2xl border border-border bg-card p-3">
           <label className={labelCls}>Label</label>
           <input className={inputCls} value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Optional edge label" />
         </div>
 
-        <div>
+        <div className="rounded-2xl border border-border bg-card p-3">
           <label className={labelCls}>Condition type</label>
           <select className={inputCls} value={condType} onChange={(event) => setCondType(event.target.value as ConditionType)}>
             {CONDITION_TYPES.map((condition) => (
@@ -129,7 +163,8 @@ export default function EdgeConfigPanel({ edge, onClose, onUpdate, onDelete }: E
         </label>
       </div>
 
-      <div className="px-3 py-2.5 border-t border-border flex flex-col gap-2">
+      <div className="px-3 sm:px-4 py-3 border-t border-border bg-card/80 backdrop-blur flex flex-col gap-2 safe-area-page">
+        {dirty && <p className="text-[10px] text-amber-600 font-semibold">Unsaved changes</p>}
         <button
           onClick={handleSave}
           disabled={saving}
@@ -146,4 +181,16 @@ export default function EdgeConfigPanel({ edge, onClose, onUpdate, onDelete }: E
       </div>
     </aside>
   )
+}
+
+function snapshotEdge(edge: FlowEdge) {
+  return JSON.stringify({
+    condition_type: edge.condition_type,
+    condition_value: edge.condition_value ?? '',
+    condition_variable: edge.condition_variable ?? '',
+    condition_expression: edge.condition_expression ?? '',
+    is_fallback: edge.is_fallback,
+    priority: edge.priority,
+    label: edge.label ?? '',
+  })
 }

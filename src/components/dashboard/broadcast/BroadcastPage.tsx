@@ -68,7 +68,7 @@ function TemplatesTab({ ownerId }: { ownerId: string }) {
 
       {/* Add form */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card p-4 sm:p-5 space-y-4">
           <h4 className="font-semibold text-sm text-foreground">Register Approved Template</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -135,7 +135,7 @@ function TemplatesTab({ ownerId }: { ownerId: string }) {
           <p className="text-xs text-muted-foreground mt-1">Add your Meta-approved templates above</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-border overflow-hidden">
+        <div className="rounded-xl border border-border overflow-hidden mobile-table-scroll">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40">
@@ -229,7 +229,7 @@ function CampaignsTab({ ownerId, chatbotId }: { ownerId: string; chatbotId: stri
 
       {/* Create form */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card p-4 sm:p-5 space-y-4">
           <h4 className="font-semibold text-sm text-foreground">New Broadcast Campaign</h4>
 
           <div>
@@ -318,7 +318,7 @@ function CampaignsTab({ ownerId, chatbotId }: { ownerId: string; chatbotId: stri
           <p className="text-xs text-muted-foreground mt-1">Create your first broadcast campaign above</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-border overflow-hidden">
+        <div className="rounded-xl border border-border overflow-hidden mobile-table-scroll">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40">
@@ -379,7 +379,7 @@ export default function BroadcastPage() {
       </div>
 
       <Tabs defaultValue="templates">
-        <TabsList className="bg-muted border border-border">
+        <TabsList className="bg-muted border border-border w-full max-w-full overflow-x-auto justify-start">
           <TabsTrigger value="templates" className="flex items-center gap-1.5">
             <FileText size={13} /> Templates
           </TabsTrigger>

@@ -128,21 +128,11 @@ export function useInboxData(ownerId: string | null) {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error('Not logged in')
 
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-message`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({ to: phone, message: text.trim() }),
-        }
-      )
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Send failed')
-      }
+      const { error } = await supabase.functions.invoke('send-message', {
+        body: { to: phone, message: text.trim() },
+      })
+
+      if (error) throw new Error(error.message || 'Send failed')
 
       // Optimistic local update
       setMessages(prev => [...prev, {

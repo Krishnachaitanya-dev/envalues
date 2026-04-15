@@ -63,13 +63,21 @@ export interface FlowSession {
   last_message_at: string
 }
 
+export interface OutboundMediaHeader {
+  type: 'image' | 'video' | 'document'
+  url: string
+  filename?: string
+}
+
 export interface OutboundMessage {
   type: 'text' | 'image' | 'video' | 'document' | 'interactive'
   text?: string
+  preview_url?: boolean
   url?: string
   caption?: string
   body?: string
   buttons?: Array<{ id: string; title: string }>
+  header?: OutboundMediaHeader
 }
 
 export interface NodeResult {

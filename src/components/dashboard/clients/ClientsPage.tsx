@@ -35,7 +35,7 @@ export default function ClientsPage() {
   const maxClients = ownerData?.max_clients ?? 0
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
@@ -48,7 +48,7 @@ export default function ClientsPage() {
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">Manage your white-label client accounts</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={refresh} className="p-2 rounded-lg hover:bg-muted/50 transition-colors">
             <RefreshCw size={13} className="text-muted-foreground" />
           </button>
@@ -147,7 +147,47 @@ export default function ClientsPage() {
             </button>
           </div>
         ) : (
-          <table className="w-full text-xs">
+          <>
+          <div className="md:hidden p-3 space-y-2">
+            {clients.map(c => (
+              <div key={c.id} className="rounded-2xl border border-border bg-muted/20 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-foreground truncate">{c.full_name ?? 'No name'}</p>
+                    <p className="text-[11px] text-muted-foreground break-all">{c.email}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Joined {format(new Date(c.created_at), 'd MMM yyyy')}</p>
+                  </div>
+                  {c.is_active
+                    ? <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400"><CheckCircle2 size={11} /> Active</span>
+                    : <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-red-400"><Ban size={11} /> Suspended</span>
+                  }
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  {c.chatbot ? (
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <Bot size={12} className={c.chatbot.is_active ? 'text-primary' : 'text-muted-foreground'} />
+                      <span className={c.chatbot.is_active ? 'text-primary font-semibold' : 'text-muted-foreground'}>
+                        {c.chatbot.is_active ? 'Bot live' : 'Bot draft'}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No bot yet</span>
+                  )}
+                  <button
+                    onClick={() => toggleClientActive(c.id, c.is_active)}
+                    className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-colors ${
+                      c.is_active
+                        ? 'border-red-500/30 text-red-400 hover:bg-red-500/10'
+                        : 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+                    }`}
+                  >
+                    {c.is_active ? 'Suspend' : 'Restore'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <table className="hidden md:table w-full text-xs">
             <thead className="border-b border-border bg-muted/20">
               <tr>
                 <th className="text-left px-5 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Client</th>
@@ -208,6 +248,7 @@ export default function ClientsPage() {
               ))}
             </tbody>
           </table>
+          </>
         )}
       </div>
     </div>

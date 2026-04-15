@@ -192,29 +192,42 @@ async function sendWhatsAppMessage(to: string, msg: OutboundMessage, creds: { ac
   let payload: Record<string, unknown>
 
   if (msg.type === 'text') {
-    payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: 'text',
-      text: { preview_url: false, body: msg.text ?? '' },
-    }
+      payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'text',
+        text: { preview_url: msg.preview_url ?? false, body: msg.text ?? '' },
+      }
   } else if (msg.type === 'interactive') {
+    const interactive: Record<string, unknown> = {
+      type: 'button',
+      body: { text: msg.body ?? '' },
+      action: {
+        buttons: (msg.buttons ?? []).map(b => ({
+          type: 'reply',
+          reply: { id: b.id, title: b.title },
+        })),
+      },
+    }
+
+    if (msg.header?.url) {
+      const headerMedia: Record<string, unknown> = { link: msg.header.url }
+      if (msg.header.type === 'document') {
+        headerMedia.filename = msg.header.filename ?? msg.header.url.split('/').pop()?.split('?')[0] ?? 'file'
+      }
+      interactive.header = {
+        type: msg.header.type,
+        [msg.header.type]: headerMedia,
+      }
+    }
+
     payload = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to,
       type: 'interactive',
-      interactive: {
-        type: 'button',
-        body: { text: msg.body ?? '' },
-        action: {
-          buttons: (msg.buttons ?? []).map(b => ({
-            type: 'reply',
-            reply: { id: b.id, title: b.title },
-          })),
-        },
-      },
+      interactive,
     }
   } else {
     const mediaPayload: Record<string, unknown> = { link: msg.url }

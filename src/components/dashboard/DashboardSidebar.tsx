@@ -1,4 +1,6 @@
 import { LayoutDashboard, Workflow, Settings2, CreditCard, BarChart3, ScrollText, HelpCircle, Inbox, Users, Building2, Send } from 'lucide-react'
+import { useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { NavLink } from '@/components/NavLink'
 import { useDashboard } from '@/contexts/DashboardContext'
 import {
@@ -28,9 +30,18 @@ const futureItems = [
 ]
 
 export function DashboardSidebar() {
-  const { state } = useSidebar()
-  const collapsed = state === 'collapsed'
+  const { state, isMobile, setOpenMobile } = useSidebar()
+  const location = useLocation()
+  const collapsed = !isMobile && state === 'collapsed'
   const { isEnterprise, isEnterpriseClient } = useDashboard()
+
+  useEffect(() => {
+    if (isMobile) setOpenMobile(false)
+  }, [isMobile, location.pathname, setOpenMobile])
+
+  const closeMobileSidebar = () => {
+    if (isMobile) setOpenMobile(false)
+  }
 
   const navItems = (() => {
     let items = [
@@ -59,6 +70,7 @@ export function DashboardSidebar() {
                     <NavLink
                       to={item.url}
                       end={item.url === '/dashboard'}
+                      onClick={closeMobileSidebar}
                       className="hover:bg-muted/50"
                       activeClassName="bg-primary/10 text-primary font-medium"
                     >

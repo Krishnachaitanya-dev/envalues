@@ -16,7 +16,7 @@ const FloatingBubble = ({ style, delay, text }: { style: React.CSSProperties; de
 
 const StepCard = ({ number, title, desc, icon, delay }: { number: string; title: string; desc: string; icon: string; delay: number }) => (
   <div
-    className="step-card relative p-8 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm"
+    className="step-card relative p-5 sm:p-8 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm"
     style={{ animationDelay: `${delay}s` }}
   >
     <div className="absolute -top-4 -left-2 w-10 h-10 rounded-full bg-[#25D366] flex items-center justify-center text-black font-black text-lg shadow-lg shadow-[#25D366]/30">
@@ -29,16 +29,16 @@ const StepCard = ({ number, title, desc, icon, delay }: { number: string; title:
 )
 
 const Feature = ({ icon, text }: { icon: string; text: string }) => (
-  <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-full px-5 py-3">
+  <div className="flex w-full sm:w-auto items-center gap-3 bg-white/5 border border-white/10 rounded-2xl sm:rounded-full px-4 sm:px-5 py-3">
     <span className="text-xl">{icon}</span>
     <span className="text-gray-300 text-sm font-medium">{text}</span>
   </div>
 )
 
 const Industry = ({ emoji, name }: { emoji: string; name: string }) => (
-  <div className="flex flex-col items-center gap-2 p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-[#25D366]/40 hover:bg-[#25D366]/5 transition-all duration-300 cursor-default">
-    <span className="text-3xl">{emoji}</span>
-    <span className="text-sm text-gray-400 font-medium">{name}</span>
+  <div className="flex flex-col items-center gap-2 p-3 sm:p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-[#25D366]/40 hover:bg-[#25D366]/5 transition-all duration-300 cursor-default">
+    <span className="text-2xl sm:text-3xl">{emoji}</span>
+    <span className="text-[11px] sm:text-sm text-gray-400 font-medium text-center">{name}</span>
   </div>
 )
 
@@ -187,17 +187,17 @@ export default function Landing() {
         }
       `}</style>
 
-      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 sm:px-8 py-4 sm:py-5"
+      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between gap-3 px-3 sm:px-8 py-3 sm:py-5"
         style={{ background: scrollY > 40 ? 'rgba(10,10,10,0.9)' : 'transparent', backdropFilter: scrollY > 40 ? 'blur(12px)' : 'none', borderBottom: scrollY > 40 ? '1px solid rgba(255,255,255,0.06)' : 'none', transition: 'all 0.3s' }}
       >
         <div className="flex items-center gap-2">
-          <img src="/envalues-logo.png" alt="Envalues" className="h-10 w-auto" />
+          <img src="/envalues-logo.png" alt="Envalues" className="h-8 sm:h-10 w-auto" />
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          <button onClick={() => navigate('/login')} className="btn-secondary text-xs sm:text-sm px-4 sm:px-6 py-2 sm:py-2.5">
+          <button onClick={() => navigate('/login')} className="btn-secondary text-xs sm:text-sm px-3 sm:px-6 py-2 sm:py-2.5">
             Login
           </button>
-          <button onClick={() => navigate('/signup')} className="btn-primary text-xs sm:text-sm px-4 sm:px-6 py-2 sm:py-2.5" style={{ animation: 'none' }}>
+          <button onClick={() => navigate('/signup')} className="btn-primary text-xs sm:text-sm px-3 sm:px-6 py-2 sm:py-2.5" style={{ animation: 'none' }}>
             Get Started
           </button>
         </div>
@@ -230,16 +230,16 @@ export default function Landing() {
               Build a smart button-based chatbot for your WhatsApp Business number — no coding needed. Customers get instant answers, you get more time to run your business.
             </p>
 
-            <div className="flex flex-wrap gap-4 mb-12 fade-up-3">
-              <button onClick={() => navigate('/signup')} className="btn-primary">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-10 sm:mb-12 fade-up-3">
+              <button onClick={() => navigate('/signup')} className="btn-primary w-full sm:w-auto">
                 Start Building Free →
               </button>
-              <button onClick={() => navigate('/login')} className="btn-secondary">
+              <button onClick={() => navigate('/login')} className="btn-secondary w-full sm:w-auto">
                 I have an account
               </button>
             </div>
 
-            <div className="flex flex-wrap gap-x-6 gap-y-3 fade-up-4">
+            <div className="grid grid-cols-1 min-[390px]:grid-cols-3 gap-x-4 gap-y-3 fade-up-4">
               {['No coding required', 'Live in minutes', '₹500/month flat'].map(t => (
                 <div key={t} className="flex items-center gap-2 text-sm text-gray-500">
                   <span className="text-[#25D366]">✓</span> {t}
@@ -249,7 +249,7 @@ export default function Landing() {
           </div>
 
           <div className="flex justify-center lg:justify-end fade-up-2">
-            <div className="phone-mockup w-[280px]">
+            <div className="phone-mockup w-full max-w-[280px]">
               <div className="bg-[#111] px-5 pt-4 pb-2 flex justify-between items-center text-xs text-gray-500">
                 <span>9:41</span>
                 <span>●●●</span>
@@ -319,7 +319,7 @@ export default function Landing() {
             <h2 className="font-display text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight mb-3">Works for every business</h2>
             <p className="text-gray-500 text-sm sm:text-base">If customers ask the same questions on WhatsApp, you need this.</p>
           </div>
-          <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-10 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 min-[390px]:grid-cols-3 sm:grid-cols-5 lg:grid-cols-10 gap-3 sm:gap-4">
             {[
               ['🍽️','Restaurant'], ['🏥','Clinic'], ['🛒','Shop'], ['🏠','Real Estate'],
               ['💈','Salon'], ['🎓','Coaching'], ['🚗','Garage'], ['💊','Pharmacy'],
@@ -454,7 +454,7 @@ export default function Landing() {
           <p className="relative text-gray-400 text-base sm:text-lg mb-8 sm:mb-10 max-w-lg mx-auto">
             Join businesses already using our platform to automate their WhatsApp customer service.
           </p>
-          <button onClick={() => navigate('/signup')} className="btn-primary text-base sm:text-lg px-8 sm:px-12 py-3 sm:py-4">
+          <button onClick={() => navigate('/signup')} className="btn-primary w-full sm:w-auto text-base sm:text-lg px-8 sm:px-12 py-3 sm:py-4">
             Create Your Free Account →
           </button>
         </div>

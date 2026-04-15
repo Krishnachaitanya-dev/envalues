@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { ChevronDown, ChevronRight, User, LogOut, LayoutDashboard, Workflow, Settings2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 
 const breadcrumbMap: Record<string, { label: string; icon: React.ElementType }> = {
   '/dashboard': { label: 'Overview', icon: LayoutDashboard },
@@ -28,13 +29,14 @@ export function TopBar() {
 
   return (
     <nav className="h-[52px] border-b border-border sticky top-0 z-50 backdrop-blur-xl bg-background/90">
-      <div className="h-full flex items-center justify-between px-4">
-        <div className="flex items-center gap-2.5">
+      <div className="h-full flex items-center justify-between gap-3 px-3 sm:px-4">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <SidebarTrigger className="md:hidden touch-target rounded-xl" />
           <Link to="/dashboard" className="flex items-center gap-2.5 shrink-0">
             {brand?.logoUrl ? (
-              <img src={brand.logoUrl} alt={brand.name} className="h-10 w-auto rounded-lg object-contain" />
+              <img src={brand.logoUrl} alt={brand.name} className="h-8 sm:h-10 w-auto rounded-lg object-contain" />
             ) : (
-              <img src="/envalues-logo.png" alt="Envalues" className="h-10 w-auto" />
+              <img src="/envalues-logo.png" alt="Envalues" className="h-8 sm:h-10 w-auto" />
             )}
           </Link>
 

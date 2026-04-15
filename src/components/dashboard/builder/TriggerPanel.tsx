@@ -3,6 +3,7 @@ import { Plus, Trash2, Zap } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -70,6 +71,9 @@ export default function TriggerPanel({ triggers, flowId, onAddTrigger, onRemoveT
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="text-sm font-bold">Flow Triggers</DialogTitle>
+          <DialogDescription className="sr-only">
+            Manage the keywords and API triggers that can start this flow.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-1.5 max-h-48 overflow-y-auto">

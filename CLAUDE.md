@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Context Navigation
+
+1.ALWAYS query the knowledge graph first
+2.only read raw files if i explicitly say so
+
 ## Commands
 
 ```bash
@@ -58,3 +63,7 @@ VITE_SUPABASE_PROJECT_ID
 
 ### Testing
 Vitest with jsdom environment. Setup file at `src/test/setup.ts`. Tests use Testing Library React globals.
+## Context Navigation
+
+1. ALWAYS query the knowledge graph first.
+2. Only read raw files if the user explicitly says so.

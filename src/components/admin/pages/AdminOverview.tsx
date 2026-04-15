@@ -56,7 +56,7 @@ export default function AdminOverview() {
     .slice(0, 8)
 
   return (
-    <div className="space-y-6 max-w-7xl">
+    <div className="space-y-5 sm:space-y-6 w-full max-w-7xl">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-foreground font-display">Platform Overview</h1>
@@ -64,7 +64,7 @@ export default function AdminOverview() {
       </div>
 
       {/* KPI Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 min-[380px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
         <KpiCard
           label="Total Users"
           value={metrics?.totalUsers ?? '—'}
@@ -178,7 +178,7 @@ export default function AdminOverview() {
       </div>
 
       {/* Recent signups */}
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <div className="bg-card border border-border rounded-2xl overflow-hidden mobile-table-scroll">
         <div className="px-5 py-4 border-b border-border">
           <h2 className="text-sm font-semibold text-foreground">Recent Signups</h2>
         </div>

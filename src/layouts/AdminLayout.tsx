@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom'
+import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { AdminProvider, useAdmin } from '@/contexts/AdminContext'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
@@ -6,6 +7,7 @@ import { AdminTopBar } from '@/components/admin/AdminTopBar'
 
 function AdminShell() {
   const { loading } = useAdmin()
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   if (loading) return (
     <div className="min-h-screen bg-background flex items-center justify-center">
@@ -22,11 +24,27 @@ function AdminShell() {
   )
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <AdminTopBar />
-      <div className="flex-1 flex overflow-hidden">
-        <AdminSidebar />
-        <main className="flex-1 overflow-y-auto p-6">
+    <div className="min-h-screen bg-background flex flex-col overflow-x-clip">
+      <AdminTopBar onMenuClick={() => setMobileNavOpen(true)} />
+      <div className="flex-1 flex min-w-0 overflow-hidden">
+        <AdminSidebar className="hidden md:flex" />
+
+        {mobileNavOpen && (
+          <div className="fixed inset-0 z-50 md:hidden">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/60"
+              aria-label="Close admin navigation"
+              onClick={() => setMobileNavOpen(false)}
+            />
+            <AdminSidebar
+              className="relative h-full w-[82vw] max-w-80 shadow-2xl"
+              onNavigate={() => setMobileNavOpen(false)}
+            />
+          </div>
+        )}
+
+        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-6 safe-area-page">
           <Outlet />
         </main>
       </div>

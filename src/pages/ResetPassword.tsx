@@ -43,13 +43,13 @@ export default function ResetPassword() {
     'w-full px-4 py-2.5 rounded-xl bg-surface-raised border border-input text-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all'
 
   const shell = (children: React.ReactNode) => (
-    <div className="min-h-screen bg-background bg-noise flex items-center justify-center px-4 relative">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px] pointer-events-none" />
-      <div className="w-full max-w-md space-y-8 animate-fade-in">
+    <div className="min-h-[100dvh] bg-background bg-noise flex items-center justify-center px-3 sm:px-4 py-6 sm:py-10 relative overflow-hidden safe-area-page">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-72 sm:w-[500px] sm:h-[500px] bg-primary/5 rounded-full blur-[120px] pointer-events-none" />
+      <div className="w-full max-w-md space-y-6 sm:space-y-8 animate-fade-in">
         <div className="text-center space-y-2">
           <img src="/envalues-logo.png" alt="Envalues" className="h-12 w-auto mx-auto" />
         </div>
-        <div className="bg-card border border-border rounded-2xl p-8 space-y-6">{children}</div>
+        <div className="bg-card border border-border rounded-2xl p-5 sm:p-8 space-y-6">{children}</div>
       </div>
     </div>
   )

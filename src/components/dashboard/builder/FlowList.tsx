@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Check, Pencil, Plus, Trash2, Workflow, X } from 'lucide-react'
 import type { Flow } from '@/integrations/supabase/flow-types'
+import { cn } from '@/lib/utils'
 
 interface FlowListProps {
   flows: Flow[]
@@ -9,6 +10,7 @@ interface FlowListProps {
   onCreateFlow: (name: string) => Promise<void>
   onRenameFlow: (id: string, name: string) => Promise<void>
   onDeleteFlow: (id: string) => Promise<void>
+  className?: string
 }
 
 export default function FlowList({
@@ -18,6 +20,7 @@ export default function FlowList({
   onCreateFlow,
   onRenameFlow,
   onDeleteFlow,
+  className,
 }: FlowListProps) {
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
@@ -62,7 +65,7 @@ export default function FlowList({
   }
 
   return (
-    <aside className="w-64 shrink-0 border-r border-border bg-surface-raised flex flex-col overflow-hidden">
+    <aside className={cn('w-64 shrink-0 border-r border-border bg-surface-raised flex flex-col overflow-hidden', className)}>
       <div className="p-3 border-b border-border flex items-center justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Flows</p>

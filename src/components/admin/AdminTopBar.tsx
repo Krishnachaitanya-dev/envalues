@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ShieldCheck, ChevronDown, LogOut, RefreshCw, User } from 'lucide-react'
+import { ShieldCheck, ChevronDown, LogOut, Menu, RefreshCw, User } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAdmin } from '@/contexts/AdminContext'
 
@@ -12,7 +12,11 @@ const breadcrumbMap: Record<string, string> = {
   '/admin/security':  'Security',
 }
 
-export function AdminTopBar() {
+interface AdminTopBarProps {
+  onMenuClick?: () => void
+}
+
+export function AdminTopBar({ onMenuClick }: AdminTopBarProps) {
   const { adminEmail, adminName, handleLogout, refreshAll } = useAdmin()
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -30,9 +34,17 @@ export function AdminTopBar() {
 
   return (
     <nav className="h-[52px] border-b border-border sticky top-0 z-50 backdrop-blur-xl bg-background/90">
-      <div className="h-full flex items-center justify-between px-4">
+      <div className="h-full flex items-center justify-between px-3 sm:px-4">
         {/* Left */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={onMenuClick}
+            className="md:hidden touch-target rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center"
+            aria-label="Open admin navigation"
+          >
+            <Menu size={17} />
+          </button>
           <Link to="/admin" className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg shadow-violet-500/25">
               <ShieldCheck size={15} className="text-white" />
@@ -40,18 +52,18 @@ export function AdminTopBar() {
             <span className="font-display font-bold text-foreground text-sm hidden sm:inline">Admin</span>
           </Link>
 
-          <span className="text-border text-sm">/</span>
+          <span className="text-border text-sm hidden min-[360px]:inline">/</span>
           <motion.span
             key={location.pathname}
             initial={{ opacity: 0, x: -6 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.15 }}
-            className="text-xs font-semibold text-foreground"
+            className="text-xs font-semibold text-foreground truncate"
           >
             {currentLabel}
           </motion.span>
 
-          <span className="text-[9px] font-bold uppercase tracking-wider bg-violet-500/10 text-violet-400 px-2 py-0.5 rounded-full border border-violet-500/20">
+          <span className="hidden sm:inline-flex text-[9px] font-bold uppercase tracking-wider bg-violet-500/10 text-violet-400 px-2 py-0.5 rounded-full border border-violet-500/20">
             Super Admin
           </span>
         </div>

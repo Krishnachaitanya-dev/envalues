@@ -11,11 +11,16 @@ const navItems = [
   { title: 'Evolution API', url: '/admin/evolution', icon: Zap },
 ]
 
-export function AdminSidebar() {
+interface AdminSidebarProps {
+  className?: string
+  onNavigate?: () => void
+}
+
+export function AdminSidebar({ className, onNavigate }: AdminSidebarProps) {
   const location = useLocation()
 
   return (
-    <aside className="w-56 shrink-0 border-r border-border bg-card flex flex-col h-full">
+    <aside className={cn('w-56 shrink-0 border-r border-border bg-card flex flex-col h-full', className)}>
       <nav className="flex-1 p-3 space-y-0.5">
         {navItems.map(item => {
           const isActive = item.end
@@ -27,8 +32,9 @@ export function AdminSidebar() {
               key={item.url}
               to={item.url}
               end={item.end}
+              onClick={onNavigate}
               className={cn(
-                'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors',
+                'flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors',
                 isActive
                   ? 'bg-primary/10 text-primary font-semibold'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -44,6 +50,7 @@ export function AdminSidebar() {
       <div className="p-3 border-t border-border">
         <NavLink
           to="/dashboard"
+          onClick={onNavigate}
           className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         >
           <Settings size={15} />

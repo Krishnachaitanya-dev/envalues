@@ -2,6 +2,7 @@ import { readFileSync } from 'fs'
 import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync('supabase/migrations/20260412000000_flow_template_catalog.sql', 'utf-8')
+const inputCaptureMigration = readFileSync('supabase/migrations/20260414000000_flow_template_input_capture.sql', 'utf-8')
 
 describe('flow template migration contract', () => {
   it('adds provenance, catalog, idempotency, trigger normalization, and RPC', () => {
@@ -41,5 +42,14 @@ describe('flow template migration contract', () => {
     for (const code of ['TEMPLATE_NOT_FOUND', 'TEMPLATE_INVALID', 'TRIGGER_CONFLICT', 'PERMISSION_DENIED', 'IDEMPOTENCY_CONFLICT', 'DB_WRITE_FAILED']) {
       expect(migration).toContain(code)
     }
+  })
+
+  it('updates stock templates so collection prompts pause for user input before handoff', () => {
+    expect(inputCaptureMigration).toContain('build_stock_flow_template_v2')
+    expect(inputCaptureMigration).toContain("'type', 'input'")
+    expect(inputCaptureMigration).toContain("'store_as', 'secondary_response'")
+    expect(inputCaptureMigration).toContain("CASE WHEN p_secondary_collect THEN 'handoff' ELSE 'end' END")
+    expect(inputCaptureMigration).toContain('gym_fitness_studio')
+    expect(inputCaptureMigration).toContain('Trial Session')
   })
 })

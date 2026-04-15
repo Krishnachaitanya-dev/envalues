@@ -23,6 +23,28 @@ export interface TurnDeps {
 }
 
 const TURN_TIMEOUT_MS = 3000
+const INPUT_PROMPTED_CONTEXT_KEY = '__input_prompted_at'
+
+function inputPromptMessages(node: FlowNode): OutboundMessage[] {
+  const prompt = typeof node.config.prompt === 'string' ? node.config.prompt.trim() : ''
+  return prompt ? [{ type: 'text', text: prompt }] : []
+}
+
+async function pauseAtInputNode(session: FlowSession, node: FlowNode, deps: TurnDeps): Promise<void> {
+  session.current_node_id = node.id
+  const alreadyPrompted = session.context[INPUT_PROMPTED_CONTEXT_KEY] === node.id
+
+  if (!alreadyPrompted) {
+    session.context = { ...session.context, [INPUT_PROMPTED_CONTEXT_KEY]: node.id }
+  }
+
+  await deps.saveSession(session)
+
+  if (!alreadyPrompted) {
+    const messages = inputPromptMessages(node)
+    if (messages.length > 0) await deps.enqueueMessages(messages, session.phone)
+  }
+}
 
 export async function executeTurn(session: FlowSession, inbound: string, deps: TurnDeps): Promise<void> {
   const visited = new Set<string>()
@@ -52,13 +74,23 @@ export async function executeTurn(session: FlowSession, inbound: string, deps: T
 
     // Input node: pause if no inbound — wait for next turn
     if (currentNode.node_type === 'input' && !remainingInbound) {
-      session.current_node_id = currentNode.id
-      await deps.saveSession(session)
+      await pauseAtInputNode(session, currentNode, deps)
       return
+    }
+
+    // If we paused here waiting for a button reply, skip re-executing this node
+    // and go straight to edge evaluation with the new inbound text
+    const inputPendingAt = session.context['__input_pending_at'] as string | undefined
+    const skipExecution = inputPendingAt === currentNode.id
+    if (skipExecution) {
+      const ctx = { ...session.context }
+      delete ctx['__input_pending_at']
+      session.context = ctx
     }
 
     // Execute current node
     let result
+    if (!skipExecution) {
     switch (currentNode.node_type) {
       case 'start':
         result = executeStartNode(currentNode, session, remainingInbound)
@@ -95,9 +127,18 @@ export async function executeTurn(session: FlowSession, inbound: string, deps: T
       default:
         result = { messages: [], context_updates: {}, next_node_id: null, skip_edge_evaluation: false, consumes_input: false }
     }
+    } else {
+      // Resuming after pause — skip re-execution, proceed to edge evaluation
+      result = { messages: [], context_updates: {}, next_node_id: null, skip_edge_evaluation: false, consumes_input: false }
+    }
 
     // Persist state first (state-first guarantee)
     session.context = { ...session.context, ...result.context_updates }
+    if (currentNode.node_type === 'input' && result.consumes_input) {
+      const ctx = { ...session.context }
+      delete ctx[INPUT_PROMPTED_CONTEXT_KEY]
+      session.context = ctx
+    }
     session.step_count++
     session.last_node_executed_at = new Date().toISOString()
     await deps.saveSession(session)
@@ -105,6 +146,21 @@ export async function executeTurn(session: FlowSession, inbound: string, deps: T
     // Enqueue messages for delivery
     if (result.messages.length > 0) {
       await deps.enqueueMessages(result.messages, session.phone)
+    }
+
+    // Pause at message nodes with conditional outgoing edges so the user can
+    // tap a button before edge evaluation proceeds.
+    if (currentNode.node_type === 'message' && !skipExecution) {
+      const allEdges = await deps.getOutgoingEdges(currentNode.id)
+      const hasConditionalEdges = allEdges
+        .filter(e => !e.is_fallback)
+        .some(e => e.condition_type !== 'always')
+      if (hasConditionalEdges) {
+        session.context = { ...session.context, __input_pending_at: currentNode.id }
+        session.current_node_id = currentNode.id
+        await deps.saveSession(session)
+        return
+      }
     }
 
     // Handle handoff — set status and alert reception
@@ -131,7 +187,19 @@ export async function executeTurn(session: FlowSession, inbound: string, deps: T
     if (currentNode.node_type === 'end' && result.next_node_id) {
       const returnNode = await deps.getNode(result.next_node_id)
       if (!returnNode) { await deps.killSession(session, 'missing_return_node'); return }
-      currentNode = returnNode
+      if (returnNode.node_type === 'subflow') {
+        const returnEdges = await deps.getOutgoingEdges(returnNode.id)
+        const successorId = evaluateEdges(returnEdges, session, '', deps.evalExpression)
+        if (!successorId) {
+          await deps.saveSession(session)
+          return
+        }
+        const successorNode = await deps.getNode(successorId)
+        if (!successorNode) { await deps.killSession(session, 'missing_return_node'); return }
+        currentNode = successorNode
+      } else {
+        currentNode = returnNode
+      }
       if (result.consumes_input) remainingInbound = ''
       continue
     }
@@ -142,7 +210,7 @@ export async function executeTurn(session: FlowSession, inbound: string, deps: T
       nextNodeId = result.next_node_id
     } else {
       const edges = await deps.getOutgoingEdges(currentNode.id)
-      nextNodeId = evaluateEdges(edges, session, result.consumes_input ? '' : remainingInbound, deps.evalExpression)
+      nextNodeId = evaluateEdges(edges, session, remainingInbound, deps.evalExpression)
     }
 
     if (result.consumes_input) remainingInbound = ''
@@ -159,8 +227,7 @@ export async function executeTurn(session: FlowSession, inbound: string, deps: T
 
     // Pause before input nodes — next turn will execute with new inbound
     if (nextNode.node_type === 'input') {
-      session.current_node_id = nextNode.id
-      await deps.saveSession(session)
+      await pauseAtInputNode(session, nextNode, deps)
       return
     }
 

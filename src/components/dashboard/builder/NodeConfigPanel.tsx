@@ -262,7 +262,7 @@ export default function NodeConfigPanel({
   const hasTooManyQuickReplyButtons = rawQuickReplyButtonCount(config.buttons) > MAX_QUICK_REPLY_BUTTONS_PER_MESSAGE
 
   return (
-    <aside className="fixed right-0 top-[52px] bottom-0 z-40 w-full max-w-[460px] border-l border-border bg-surface-raised shadow-2xl flex flex-col overflow-hidden">
+    <aside className="fixed inset-x-0 sm:left-auto sm:right-0 top-[52px] bottom-0 z-40 mobile-sheet border-l border-border bg-surface-raised shadow-2xl flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/80 backdrop-blur">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{fieldLabel(nodeType)} node</p>
@@ -273,7 +273,7 @@ export default function NodeConfigPanel({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
         <div className={cardCls}>
           <label className={labelCls}>Label</label>
           <input className={inputCls} value={label} onChange={(event) => setLabel(event.target.value)} placeholder={`${fieldLabel(nodeType)} label`} />
@@ -287,16 +287,136 @@ export default function NodeConfigPanel({
         )}
 
         {nodeType === 'message' && (
-          <>
-            <div className={cardCls}>
-              <label className={labelCls}>Message text</label>
+          <div className={cardCls}>
+            <div>
+              <p className="text-sm font-bold text-foreground">Message content</p>
+              <p className="text-xs text-muted-foreground">Text, media, links, and replies are saved inside this one message node.</p>
+            </div>
+
+            <div>
+              <label className={labelCls}>Text</label>
               <textarea className={inputCls} rows={6} value={String(config.text ?? '')} onChange={(event) => setField('text', event.target.value)} placeholder="Text to send" />
             </div>
-            <div className={cardCls}>
+
+            <div className="rounded-2xl border border-border bg-muted/20 p-3 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-bold text-foreground">Quick Reply Buttons</p>
-                  <p className="text-xs text-muted-foreground">(max 3, for WhatsApp)</p>
+                  <p className="text-xs font-bold text-foreground">Media inside this message</p>
+                  <p className="text-[10px] text-muted-foreground">Public by URL. Avoid confidential documents.</p>
+                </div>
+                <span className="text-[10px] font-bold text-muted-foreground">{attachments.length}/{MAX_ATTACHMENTS_PER_MESSAGE}</span>
+              </div>
+
+              {!uploadReady && (
+                <div className="flex gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  Save/select a persisted flow node before uploading media.
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 min-[360px]:grid-cols-3 gap-1.5">
+                {(['image', 'video', 'document'] as FlowAttachmentType[]).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setAttachmentType(type)}
+                    className={[
+                      'rounded-xl border px-2 py-2 text-xs font-bold capitalize flex items-center justify-center gap-1.5',
+                      attachmentType === type ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground',
+                    ].join(' ')}
+                  >
+                    {type === 'image' && <Image size={13} />}
+                    {type === 'video' && <Video size={13} />}
+                    {type === 'document' && <FileText size={13} />}
+                    {type === 'document' ? 'PDF' : type}
+                  </button>
+                ))}
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                accept={ACCEPT_MAP[attachmentType]}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) void handleFileUpload(file)
+                }}
+              />
+
+              <button
+                type="button"
+                disabled={!uploadReady || uploading || attachments.length >= MAX_ATTACHMENTS_PER_MESSAGE}
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full rounded-2xl border-2 border-dashed border-border px-4 py-5 flex flex-col items-center gap-2 text-center hover:border-primary/40 hover:bg-primary/5 disabled:opacity-50"
+              >
+                {uploading ? <Loader2 size={20} className="animate-spin text-primary" /> : <Paperclip size={20} className="text-muted-foreground" />}
+                <span className="text-xs font-bold text-foreground">{uploading ? 'Uploading...' : `Upload ${attachmentType === 'document' ? 'PDF' : attachmentType}`}</span>
+                <span className="text-[10px] text-muted-foreground">Images 10 MB, videos 50 MB, PDF 20 MB</span>
+              </button>
+
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr_auto] gap-2">
+                <select className={inputCls} value={attachmentType} onChange={(event) => setAttachmentType(event.target.value as FlowAttachmentType)}>
+                  <option value="image">Image</option>
+                  <option value="video">Video</option>
+                  <option value="document">PDF</option>
+                </select>
+                <input className={inputCls} value={mediaUrl} onChange={(event) => setMediaUrl(event.target.value)} placeholder="Paste public media URL" />
+                  <button type="button" aria-label="Add media URL" onClick={addUrlAttachment} className="touch-target px-3 rounded-lg bg-muted text-xs font-bold text-foreground hover:bg-muted/80">Add</button>
+              </div>
+
+              <div className="space-y-2">
+                {attachments.map((attachment) => (
+                  <AttachmentCard
+                    key={attachment.id}
+                    attachment={attachment}
+                    onCaptionChange={(caption) => updateAttachmentCaption(attachment.id, caption)}
+                    onRemove={() => void removeAttachment(attachment)}
+                  />
+                ))}
+              </div>
+
+              {uploadError && (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive flex items-center justify-between gap-3">
+                  <span>{uploadError}</span>
+                  {failedFile && retryCount < 3 && (
+                    <button type="button" onClick={() => void handleRetry()} className="inline-flex items-center gap-1 font-bold text-foreground">
+                      <RotateCw size={12} />
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-border bg-muted/20 p-3 space-y-3">
+              <div>
+                <p className="text-xs font-bold text-foreground">Links inside this message</p>
+                <p className="text-[10px] text-muted-foreground">YouTube, maps, and websites stay attached to this message node.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                <input className={inputCls} value={linkLabel} onChange={(event) => setLinkLabel(event.target.value)} placeholder="Optional label, e.g. Watch video" />
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+                  <input className={inputCls} value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://youtube.com/..." />
+                  <button type="button" aria-label="Add external link" onClick={addLink} className="touch-target px-3 rounded-lg bg-muted text-xs font-bold text-foreground hover:bg-muted/80">Add</button>
+                </div>
+              </div>
+              {links.map((item) => (
+                <div key={item.id} className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
+                  <ExternalLink size={13} className="text-primary shrink-0" />
+                  <span className="text-xs text-foreground truncate flex-1">{item.label ? `${item.label}: ` : ''}{item.url}</span>
+                  <button type="button" onClick={() => setLinks((prev) => prev.filter((linkItem) => linkItem.id !== item.id))} className="text-muted-foreground hover:text-destructive">
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-border bg-muted/20 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold text-foreground">Quick replies inside this message</p>
+                  <p className="text-[10px] text-muted-foreground">Max 3 buttons for WhatsApp.</p>
                 </div>
                 <span className="text-[10px] font-bold text-muted-foreground">{quickReplyButtons.length}/{MAX_QUICK_REPLY_BUTTONS_PER_MESSAGE}</span>
               </div>
@@ -341,118 +461,14 @@ export default function NodeConfigPanel({
                 </div>
               )}
             </div>
-            <div className={cardCls}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-bold text-foreground">Media attachments</p>
-                  <p className="text-xs text-muted-foreground">Public by URL. Avoid confidential documents.</p>
-                </div>
-                <span className="text-[10px] font-bold text-muted-foreground">{attachments.length}/{MAX_ATTACHMENTS_PER_MESSAGE}</span>
-              </div>
 
-              {!uploadReady && (
-                <div className="flex gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700">
-                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                  Save/select a persisted flow node before uploading media.
-                </div>
-              )}
-
-              <div className="grid grid-cols-3 gap-1.5">
-                {(['image', 'video', 'document'] as FlowAttachmentType[]).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setAttachmentType(type)}
-                    className={[
-                      'rounded-xl border px-2 py-2 text-xs font-bold capitalize flex items-center justify-center gap-1.5',
-                      attachmentType === type ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground',
-                    ].join(' ')}
-                  >
-                    {type === 'image' && <Image size={13} />}
-                    {type === 'video' && <Video size={13} />}
-                    {type === 'document' && <FileText size={13} />}
-                    {type === 'document' ? 'PDF' : type}
-                  </button>
-                ))}
-              </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                accept={ACCEPT_MAP[attachmentType]}
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  if (file) void handleFileUpload(file)
-                }}
-              />
-
-              <button
-                type="button"
-                disabled={!uploadReady || uploading || attachments.length >= MAX_ATTACHMENTS_PER_MESSAGE}
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full rounded-2xl border-2 border-dashed border-border px-4 py-5 flex flex-col items-center gap-2 text-center hover:border-primary/40 hover:bg-primary/5 disabled:opacity-50"
-              >
-                {uploading ? <Loader2 size={20} className="animate-spin text-primary" /> : <Paperclip size={20} className="text-muted-foreground" />}
-                <span className="text-xs font-bold text-foreground">{uploading ? 'Uploading...' : `Upload ${attachmentType === 'document' ? 'PDF' : attachmentType}`}</span>
-                <span className="text-[10px] text-muted-foreground">Images 10 MB, videos 50 MB, PDF 20 MB</span>
-              </button>
-
-              <div className="grid grid-cols-[110px_1fr_auto] gap-2">
-                <select className={inputCls} value={attachmentType} onChange={(event) => setAttachmentType(event.target.value as FlowAttachmentType)}>
-                  <option value="image">Image</option>
-                  <option value="video">Video</option>
-                  <option value="document">PDF</option>
-                </select>
-                <input className={inputCls} value={mediaUrl} onChange={(event) => setMediaUrl(event.target.value)} placeholder="Paste public media URL" />
-                <button type="button" onClick={addUrlAttachment} className="px-3 rounded-lg bg-muted text-xs font-bold text-foreground hover:bg-muted/80">Add</button>
-              </div>
-
-              {attachments.map((attachment) => (
-                <AttachmentCard
-                  key={attachment.id}
-                  attachment={attachment}
-                  onCaptionChange={(caption) => updateAttachmentCaption(attachment.id, caption)}
-                  onRemove={() => void removeAttachment(attachment)}
-                />
-              ))}
-
-              {uploadError && (
-                <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive flex items-center justify-between gap-3">
-                  <span>{uploadError}</span>
-                  {failedFile && retryCount < 3 && (
-                    <button type="button" onClick={() => void handleRetry()} className="inline-flex items-center gap-1 font-bold text-foreground">
-                      <RotateCw size={12} />
-                      Retry
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className={cardCls}>
-              <div>
-                <p className="text-sm font-bold text-foreground">External links</p>
-                <p className="text-xs text-muted-foreground">YouTube, maps, and websites are sent as one clickable text message after the main text.</p>
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                <input className={inputCls} value={linkLabel} onChange={(event) => setLinkLabel(event.target.value)} placeholder="Optional label, e.g. Watch video" />
-                <div className="grid grid-cols-[1fr_auto] gap-2">
-                  <input className={inputCls} value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://youtube.com/..." />
-                  <button type="button" onClick={addLink} className="px-3 rounded-lg bg-muted text-xs font-bold text-foreground hover:bg-muted/80">Add</button>
-                </div>
-              </div>
-              {links.map((item) => (
-                <div key={item.id} className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
-                  <ExternalLink size={13} className="text-primary shrink-0" />
-                  <span className="text-xs text-foreground truncate flex-1">{item.label ? `${item.label}: ` : ''}{item.url}</span>
-                  <button type="button" onClick={() => setLinks((prev) => prev.filter((linkItem) => linkItem.id !== item.id))} className="text-muted-foreground hover:text-destructive">
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </>
+            <UnifiedMessagePreview
+              text={String(config.text ?? '')}
+              attachments={attachments}
+              links={links}
+              buttons={quickReplyButtons}
+            />
+          </div>
         )}
 
         {nodeType === 'input' && (
@@ -503,7 +519,7 @@ export default function NodeConfigPanel({
               <label className={labelCls}>Response variable</label>
               <input className={inputCls} value={String(config.response_variable ?? '')} onChange={(event) => setField('response_variable', event.target.value)} placeholder="api_response" />
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
                 <label className={labelCls}>Timeout seconds</label>
                 <input type="number" min={1} className={inputCls} value={Number(config.timeout_secs ?? 10)} onChange={(event) => setField('timeout_secs', Number(event.target.value))} />
@@ -585,7 +601,7 @@ export default function NodeConfigPanel({
         )}
       </div>
 
-      <div className="px-4 py-3 border-t border-border bg-card/80 backdrop-blur flex flex-col gap-2">
+      <div className="px-3 sm:px-4 py-3 border-t border-border bg-card/80 backdrop-blur flex flex-col gap-2 safe-area-page">
         {dirty && <p className="text-[10px] text-amber-600 font-semibold">Unsaved changes</p>}
         <button
           onClick={handleSave}
@@ -638,6 +654,76 @@ function AttachmentCard({
         onChange={(event) => onCaptionChange(event.target.value)}
         placeholder="Optional caption"
       />
+    </div>
+  )
+}
+
+function UnifiedMessagePreview({
+  text,
+  attachments,
+  links,
+  buttons,
+}: {
+  text: string
+  attachments: FlowMediaAttachment[]
+  links: FlowMessageLink[]
+  buttons: QuickReplyButton[]
+}) {
+  const hasContent = text.trim() || attachments.length > 0 || links.length > 0 || buttons.length > 0
+
+  return (
+    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3 space-y-2">
+      <div>
+        <p className="text-xs font-bold text-foreground">Unified message preview</p>
+        <p className="text-[10px] text-muted-foreground">Everything below belongs to this one message node.</p>
+      </div>
+
+      <div className="rounded-2xl rounded-tl-md border border-border bg-card p-3 space-y-2 shadow-sm">
+        {!hasContent && (
+          <p className="text-xs text-muted-foreground">Add text, media, links, or replies to build this message.</p>
+        )}
+
+        {attachments.length > 0 && (
+          <div className="space-y-1.5">
+            {attachments.map((attachment) => (
+              <div key={attachment.id} className="flex items-center gap-2 rounded-xl bg-muted/40 px-2 py-1.5">
+                {attachment.type === 'image' && <Image size={13} className="text-primary" />}
+                {attachment.type === 'video' && <Video size={13} className="text-primary" />}
+                {attachment.type === 'document' && <FileText size={13} className="text-primary" />}
+                <span className="text-[11px] font-medium text-foreground capitalize">
+                  {attachment.type === 'document' ? 'PDF' : attachment.type}
+                </span>
+                {attachment.caption && <span className="text-[11px] text-muted-foreground truncate">- {attachment.caption}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {text.trim() && (
+          <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{text}</p>
+        )}
+
+        {links.length > 0 && (
+          <div className="space-y-1">
+            {links.map((link) => (
+              <div key={link.id} className="flex items-center gap-1.5 text-[11px] text-primary">
+                <ExternalLink size={11} className="shrink-0" />
+                <span className="truncate">{link.label ? `${link.label}: ` : ''}{link.url}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {buttons.length > 0 && (
+        <div className="space-y-1">
+          {buttons.map((button) => (
+            <div key={button.id} className="rounded-xl border border-primary/25 bg-card px-3 py-2 text-center text-xs font-bold text-primary">
+              {button.title || 'Untitled button'}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

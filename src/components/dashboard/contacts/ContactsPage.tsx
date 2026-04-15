@@ -41,9 +41,9 @@ function ContactPanel({ contact, onClose }: { contact: Contact; onClose: () => v
   }
 
   return (
-    <div className="w-80 shrink-0 border-l border-border flex flex-col bg-card">
+    <div className="fixed inset-x-0 top-[52px] bottom-0 z-40 w-full border-l border-border bg-card shadow-2xl md:relative md:inset-auto md:z-auto md:w-80 md:shrink-0 md:shadow-none flex flex-col">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+      <div className="px-4 sm:px-5 py-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
             <Users size={14} className="text-primary" />
@@ -134,13 +134,13 @@ export default function ContactsPage() {
   const [selected, setSelected] = useState<Contact | null>(null)
 
   return (
-    <div className="flex h-[calc(100vh-120px)] gap-0 rounded-2xl border border-border overflow-hidden bg-card">
+    <div className="flex min-h-[calc(100dvh-118px)] md:h-[calc(100vh-120px)] gap-0 rounded-2xl border border-border overflow-hidden bg-card min-w-0">
 
       {/* ── Main table area ──────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
+        <div className="px-3 sm:px-5 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <Users size={16} className="text-primary" />
             <span className="font-display font-bold text-sm text-foreground">Contacts</span>
             <span className="bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full">{totalContacts}</span>
@@ -150,20 +150,20 @@ export default function ContactsPage() {
               <RefreshCw size={13} className="text-muted-foreground" />
             </button>
             <button onClick={exportCSV}
-              className="inline-flex items-center gap-1.5 bg-muted border border-border text-foreground px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-muted/80 transition-colors">
+              className="inline-flex items-center gap-1.5 bg-muted border border-border text-foreground px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-muted/80 transition-colors whitespace-nowrap">
               <Download size={13} /> Export CSV
             </button>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="px-5 py-3 border-b border-border flex items-center gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-40">
+        <div className="px-3 sm:px-5 py-3 border-b border-border flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-full sm:min-w-40">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
             <input type="text" placeholder="Search by phone…" value={search} onChange={e => setSearch(e.target.value)}
               className="w-full bg-muted/30 border border-border rounded-xl pl-8 pr-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30" />
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex w-full sm:w-auto items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
             {['all', ...AVAILABLE_TAGS].map(tag => (
               <button key={tag} onClick={() => setSelectedTag(tag)}
                 className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all border ${
@@ -190,7 +190,36 @@ export default function ContactsPage() {
               <p className="text-xs text-muted-foreground">Customers who message your bot will appear here automatically</p>
             </div>
           ) : (
-            <table className="w-full text-xs">
+            <>
+              <div className="md:hidden p-3 space-y-2">
+                {contacts.map(c => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setSelected(c)}
+                    className="w-full rounded-2xl border border-border bg-muted/20 p-3 text-left"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-foreground">{maskPhone(c.phone)}</span>
+                      <ChevronRight size={14} className="text-muted-foreground/50" />
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+                      <span>First: {format(new Date(c.first_seen_at), 'dd MMM yy')}</span>
+                      <span>Last: {c.last_active_ago}</span>
+                      <span>Messages: {c.total_messages}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {c.tags.length === 0
+                        ? <span className="text-[10px] text-muted-foreground/50">No tags</span>
+                        : c.tags.map(t => (
+                            <span key={t} className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${TAG_COLORS[t] ?? 'bg-muted text-muted-foreground border-border'}`}>{t}</span>
+                          ))
+                      }
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <table className="hidden md:table w-full text-xs">
               <thead className="sticky top-0 bg-card border-b border-border">
                 <tr>
                   <th className="text-left px-5 py-2.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Phone</th>
@@ -228,7 +257,8 @@ export default function ContactsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </>
           )}
         </div>
       </div>

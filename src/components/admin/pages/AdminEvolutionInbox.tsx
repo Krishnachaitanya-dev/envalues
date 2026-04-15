@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageSquare, Send, Loader2, RefreshCw, Search, Phone, Plus, X } from 'lucide-react'
+import { ArrowLeft, MessageSquare, Send, Loader2, RefreshCw, Search, Phone, Plus, X } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { supabase } from '@/integrations/supabase/client'
 import { useToast } from '@/hooks/use-toast'
@@ -206,7 +206,7 @@ export default function AdminEvolutionInbox() {
   const selectedConv = conversations.find(c => c.phone === selectedPhone)
 
   return (
-    <div className="relative flex h-[calc(100vh-210px)] rounded-2xl border border-border overflow-hidden bg-card">
+    <div className="relative flex h-[calc(100dvh-178px)] lg:h-[calc(100vh-210px)] rounded-2xl border border-border overflow-hidden bg-card min-w-0">
 
       {/* ── New Chat Modal ──────────────────────────────────────── */}
       {showNewChat && (
@@ -253,7 +253,7 @@ export default function AdminEvolutionInbox() {
       )}
 
       {/* ── Left: conversation list ─────────────────────────────── */}
-      <div className="w-72 shrink-0 border-r border-border flex flex-col bg-card">
+      <div className={`${selectedPhone ? 'hidden md:flex' : 'flex'} w-full md:w-72 shrink-0 border-r border-border flex-col bg-card`}>
         <div className="px-4 py-3 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
             <MessageSquare size={14} className="text-green-500" />
@@ -329,11 +329,19 @@ export default function AdminEvolutionInbox() {
       </div>
 
       {/* ── Right: chat thread ──────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 bg-[#0a0a0a]">
+      <div className={`${selectedPhone ? 'flex' : 'hidden md:flex'} flex-1 flex-col min-w-0 bg-[#0a0a0a]`}>
         {selectedPhone ? (
           <>
             {/* Header */}
-            <div className="px-5 py-3 border-b border-border bg-card flex items-center gap-3">
+            <div className="px-3 sm:px-5 py-3 border-b border-border bg-card flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSelectedPhone(null)}
+                className="md:hidden touch-target rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center"
+                aria-label="Back to conversations"
+              >
+                <ArrowLeft size={16} />
+              </button>
               <div className="w-9 h-9 rounded-full bg-green-500/10 flex items-center justify-center">
                 <Phone size={14} className="text-green-500" />
               </div>
@@ -347,7 +355,7 @@ export default function AdminEvolutionInbox() {
 
             {/* Messages */}
             <div
-              className="flex-1 overflow-y-auto px-5 py-4 space-y-1"
+              className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-1"
               style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0)', backgroundSize: '24px 24px' }}
             >
               {loadingMsgs ? (

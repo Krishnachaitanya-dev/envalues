@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+build/
+coverage/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.local
+
+# Supabase local state
+supabase/.temp/
+
+# Graphify and local AI artifacts
+graphify-out/
+.graphify*
+.claude/
+.superpowers/
+codex-plugin-cc-main/
+merge_semantic.py
+migration_payload.json
+
+# Non-canonical local/generated assets
+*.webm
+*.docx
+bun.lock
+bun.lockb
+
+# Editor directories and OS files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

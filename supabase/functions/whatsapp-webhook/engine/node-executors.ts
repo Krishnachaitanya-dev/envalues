@@ -5,6 +5,8 @@ import type {
   JumpConfig, SubflowConfig, HandoffConfig, ApiConfig, DelayConfig,
 } from './types.ts'
 
+type OutboundMediaType = Extract<OutboundMessage['type'], 'image' | 'video' | 'document'>
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function emptyResult(overrides: Partial<NodeResult> = {}): NodeResult {
@@ -16,6 +18,42 @@ function emptyResult(overrides: Partial<NodeResult> = {}): NodeResult {
     consumes_input: false,
     ...overrides,
   }
+}
+
+function compactTextParts(parts: Array<string | undefined>): string {
+  return parts
+    .map((part) => (part ?? '').trim())
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function buildLinkText(links: MessageConfig['links']): string {
+  if (!Array.isArray(links) || links.length === 0) return ''
+
+  return links
+    .filter((link) => link.url)
+    .map((link) => link.label ? `${link.label}: ${link.url}` : link.url)
+    .join('\n')
+}
+
+function buildQuickReplyButtons(buttons: MessageConfig['buttons']): NonNullable<OutboundMessage['buttons']> {
+  return Array.isArray(buttons)
+    ? buttons
+      .filter((button) => button.id && button.title)
+      .slice(0, 3)
+    : []
+}
+
+function normalizeOutboundMediaType(type: unknown): OutboundMediaType {
+  return type === 'image' || type === 'video' || type === 'document' ? type : 'document'
+}
+
+function filenameFromUrl(url: string): string {
+  return url.split('/').pop()?.split('?')[0] || 'file'
+}
+
+function containsUrl(text: string): boolean {
+  return /https?:\/\/\S+/i.test(text)
 }
 
 // ── start ─────────────────────────────────────────────────────────────────────
@@ -34,39 +72,67 @@ export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbou
     : config.media_url
       ? [{ type: config.media_type ?? 'document', url: config.media_url }]
       : []
+  const buttons = buildQuickReplyButtons(config.buttons)
+  const linkText = buildLinkText(config.links)
+  const textWithLinks = compactTextParts([config.text, linkText])
+  const validAttachments = attachments.filter((att) => att.url)
 
-  // Deterministic order: attachments first, then text, then consolidated links.
-  if (attachments.length > 0) {
-    for (const att of attachments) {
-      if (!att.url) continue
-      messages.push({ type: att.type as OutboundMessage['type'], url: att.url, caption: att.caption })
+  // WhatsApp button messages can carry one media header. Use that when quick
+  // replies exist so media, body text, and buttons remain one visible entity.
+  if (validAttachments.length > 0 && buttons.length > 0) {
+    const [firstAttachment, ...remainingAttachments] = validAttachments
+    const firstType = normalizeOutboundMediaType(firstAttachment.type)
+    messages.push({
+      type: 'interactive',
+      body: compactTextParts([textWithLinks, firstAttachment.caption]) || 'Please choose an option.',
+      buttons,
+      header: {
+        type: firstType,
+        url: firstAttachment.url,
+        filename: firstType === 'document' ? filenameFromUrl(firstAttachment.url) : undefined,
+      },
+    })
+
+    for (const att of remainingAttachments) {
+      const mediaType = normalizeOutboundMediaType(att.type)
+      messages.push({
+        type: mediaType,
+        url: att.url,
+        caption: att.caption,
+      })
+    }
+  } else if (validAttachments.length > 0) {
+    // For regular media messages, text and links ride as the first media caption.
+    let captionApplied = false
+    for (const att of validAttachments) {
+      const mediaType = normalizeOutboundMediaType(att.type)
+      const shouldApplyCaption = !captionApplied && buttons.length === 0
+      const caption = shouldApplyCaption
+        ? compactTextParts([textWithLinks, att.caption])
+        : att.caption
+      captionApplied = true
+      messages.push({
+        type: mediaType,
+        url: att.url,
+        caption: caption || undefined,
+      })
     }
   }
 
-  if (config.text) {
-    const buttons = Array.isArray(config.buttons)
-      ? config.buttons
-        .filter((button) => button.id && button.title)
-        .slice(0, 3)
-      : []
-
+  if (textWithLinks && validAttachments.length === 0) {
     if (buttons.length > 0) {
       messages.push({
         type: 'interactive',
-        body: config.text,
+        body: textWithLinks,
         buttons,
       })
     } else {
-      messages.push({ type: 'text', text: config.text })
+      messages.push({
+        type: 'text',
+        text: textWithLinks,
+        ...(containsUrl(textWithLinks) ? { preview_url: true } : {}),
+      })
     }
-  }
-
-  if (config.links && config.links.length > 0) {
-    const linkText = config.links
-      .filter((link) => link.url)
-      .map((link) => link.label ? `${link.label}: ${link.url}` : link.url)
-      .join('\n')
-    if (linkText) messages.push({ type: 'text', text: linkText })
   }
 
   return emptyResult({ messages })

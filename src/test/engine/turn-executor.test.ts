@@ -102,7 +102,25 @@ describe('executeTurn', () => {
 
     const lastSave = deps.savedSessions[deps.savedSessions.length - 1]
     expect(lastSave.current_node_id).toBe('n_input')
+    expect(lastSave.context['__input_prompted_at']).toBe('n_input')
+    expect(deps.sentMessages).toContain('Your name?')
     expect(lastSave.status).toBe('active')
+    expect(deps.closedSessions).toHaveLength(0)
+  })
+
+  it('does not resend an input prompt that was already shown for the same input node', async () => {
+    const nodes = [
+      makeNode('n_input', 'input', { prompt: 'Your name?', store_as: 'user.name', timeout_secs: 30 }),
+    ]
+    const deps = makeDeps(nodes, [])
+    const session = makeSession({
+      current_node_id: 'n_input',
+      context: { __input_prompted_at: 'n_input' },
+    })
+
+    await executeTurn(session, '', deps)
+
+    expect(deps.sentMessages).not.toContain('Your name?')
     expect(deps.closedSessions).toHaveLength(0)
   })
 
@@ -124,6 +142,53 @@ describe('executeTurn', () => {
     expect(deps.sentMessages).toContain('Got it!')
     expect(session.context['user.name']).toBe('Alice')
     expect(deps.closedSessions).toContain('s1')
+  })
+
+  it('uses captured input text when matching outgoing input edges', async () => {
+    const nodes = [
+      makeNode('n_input', 'input', { prompt: 'Choose 1 or 2', store_as: 'choice', timeout_secs: 30 }),
+      makeNode('n_one', 'message', { text: 'You chose one' }),
+      makeNode('n_end', 'end', {}),
+    ]
+    const edges = [
+      makeEdge('n_input', 'n_one', 'equals', '1'),
+      makeEdge('n_one', 'n_end'),
+    ]
+    const deps = makeDeps(nodes, edges)
+    const session = makeSession({ current_node_id: 'n_input' })
+
+    await executeTurn(session, '1', deps)
+
+    expect(session.context.choice).toBe('1')
+    expect(deps.sentMessages).toContain('You chose one')
+    expect(deps.closedSessions).toContain('s1')
+  })
+
+  it('routes captured input to handoff without closing the chat', async () => {
+    const nodes = [
+      makeNode('n_input', 'input', { prompt: 'Share your name and preferred time.', store_as: 'trial_request', timeout_secs: 300 }),
+      makeNode('n_handoff', 'handoff', {
+        department: 'support',
+        message: 'Thanks. Our team will confirm the slot.',
+        allow_resume: false,
+        queue_strategy: 'round_robin',
+        handoff_timeout_hours: 24,
+      }),
+    ]
+    const edges = [makeEdge('n_input', 'n_handoff')]
+    const deps = makeDeps(nodes, edges)
+    const session = makeSession({
+      current_node_id: 'n_input',
+      context: { __input_prompted_at: 'n_input' },
+    })
+
+    await executeTurn(session, 'Krish, weight loss, 6 PM', deps)
+
+    expect(session.context.trial_request).toBe('Krish, weight loss, 6 PM')
+    expect(session.context['__input_prompted_at']).toBeUndefined()
+    expect(session.status).toBe('handoff')
+    expect(deps.sentMessages).toContain('Thanks. Our team will confirm the slot.')
+    expect(deps.closedSessions).toHaveLength(0)
   })
 
   it('kills session when step_count hits max_steps', async () => {
@@ -244,6 +309,35 @@ describe('executeTurn', () => {
       call_stack: [{
         flow_id: 'f1',
         return_node_id: 'n_parent_msg',
+        context_snapshot: {},
+      }],
+    })
+    const deps = makeDeps(nodes, edges)
+
+    await executeTurn(session, '', deps)
+
+    expect(deps.sentMessages).toContain('Subflow done')
+    expect(deps.sentMessages).toContain('Back in parent')
+    expect(deps.closedSessions).toContain('s1')
+  })
+
+  it('returns from a subflow call-site to the call-site successor', async () => {
+    const nodes = [
+      makeNode('n_subflow_call', 'subflow', { subflow_id: 'child_flow', return_mode: 'auto' }),
+      makeNode('n_subflow_end', 'end', { farewell_message: 'Subflow done' }),
+      makeNode('n_parent_msg', 'message', { text: 'Back in parent' }),
+      makeNode('n_parent_end', 'end', {}),
+    ]
+    const edges = [
+      makeEdge('n_subflow_call', 'n_parent_msg'),
+      makeEdge('n_parent_msg', 'n_parent_end'),
+    ]
+    const session = makeSession({
+      current_node_id: 'n_subflow_end',
+      flow_id: 'child_flow',
+      call_stack: [{
+        flow_id: 'f1',
+        return_node_id: 'n_subflow_call',
         context_snapshot: {},
       }],
     })

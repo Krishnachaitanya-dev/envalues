@@ -9,14 +9,14 @@ export default function AdminSecurity() {
   const bannedUsers = users.filter(u => !u.is_active && !u.is_admin)
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-5 sm:space-y-6 w-full max-w-5xl">
       <div>
         <h1 className="text-2xl font-bold text-foreground font-display">Security</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Account security, banned users, and platform health</p>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-3 sm:gap-4">
         <div className="bg-card border border-border rounded-2xl p-5 flex items-start gap-4">
           <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
             <Shield size={18} className="text-emerald-400" />
@@ -39,7 +39,7 @@ export default function AdminSecurity() {
       </div>
 
       {/* Banned users */}
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <div className="bg-card border border-border rounded-2xl overflow-hidden mobile-table-scroll">
         <div className="px-5 py-4 border-b border-border">
           <h2 className="text-sm font-semibold text-foreground">Banned Users</h2>
         </div>

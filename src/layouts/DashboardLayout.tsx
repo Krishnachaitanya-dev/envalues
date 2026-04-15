@@ -1,6 +1,6 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
-import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
 import { TopBar } from '@/components/dashboard/TopBar'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
@@ -8,6 +8,8 @@ import { RightPanel } from '@/components/dashboard/RightPanel'
 
 function DashboardShell() {
   const { loading } = useDashboard()
+  const location = useLocation()
+  const isBuilderRoute = location.pathname.startsWith('/dashboard/builder')
 
   if (loading) return (
     <div className="min-h-screen bg-background flex items-center justify-center">
@@ -24,23 +26,22 @@ function DashboardShell() {
   )
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <TopBar />
-      <div className="flex-1 flex w-full overflow-hidden">
-        <SidebarProvider defaultOpen={false}>
+    <div className="min-h-screen bg-background flex flex-col overflow-x-clip">
+      <SidebarProvider defaultOpen={false} className="min-h-screen flex-col">
+        <TopBar />
+        <div className="flex-1 min-h-0 flex w-full min-w-0 overflow-hidden">
           <DashboardSidebar />
           <div className="flex-1 flex flex-col min-w-0">
-            {/* Mobile sidebar trigger */}
-            <div className="md:hidden h-10 flex items-center border-b border-border px-2">
-              <SidebarTrigger />
-            </div>
-            <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+            <main className={[
+              'flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden safe-area-page',
+              isBuilderRoute ? 'p-0' : 'p-3 sm:p-4 lg:p-6',
+            ].join(' ')}>
               <Outlet />
             </main>
           </div>
-        </SidebarProvider>
-        <RightPanel />
-      </div>
+          <RightPanel />
+        </div>
+      </SidebarProvider>
     </div>
   )
 }

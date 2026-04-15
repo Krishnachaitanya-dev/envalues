@@ -41,9 +41,18 @@ const positionSchema = z.object({
 })
 
 const attachmentSchema = z.object({
+  id: z.string().optional(),
   type: z.enum(['image', 'video', 'document']),
   url: z.string().min(1),
   caption: z.string().optional(),
+  storage_path: z.string().optional(),
+  source: z.enum(['upload', 'url']).optional(),
+})
+
+const linkSchema = z.object({
+  id: z.string().optional(),
+  url: z.string().min(1),
+  label: z.string().optional(),
 })
 
 const validationSchema = z.object({
@@ -57,6 +66,7 @@ const nodeDataSchemas = {
   message: z.object({
     text: z.string().min(1),
     attachments: z.array(attachmentSchema).optional(),
+    links: z.array(linkSchema).optional(),
   }).passthrough(),
   input: z.object({
     prompt: z.string().min(1),

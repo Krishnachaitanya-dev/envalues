@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react'
-import { Search, MessageSquare, RefreshCw, Bot, User, Inbox, UserCheck, UserX, Send, AlertTriangle, Loader2 } from 'lucide-react'
+import { ArrowLeft, Search, MessageSquare, RefreshCw, Bot, User, Inbox, UserCheck, UserX, Send, AlertTriangle, Loader2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useInboxData } from '@/hooks/useInboxData'
@@ -17,7 +17,7 @@ function Bubble({ direction, content, msg_type, created_at }: {
   const isAgent = msg_type === 'agent'
   return (
     <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-2`}>
-      <div className={`flex items-end gap-2 max-w-[75%] ${isOut ? 'flex-row-reverse' : 'flex-row'}`}>
+      <div className={`flex items-end gap-2 max-w-[88%] sm:max-w-[75%] ${isOut ? 'flex-row-reverse' : 'flex-row'}`}>
         <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
           isOut ? (isAgent ? 'bg-blue-500/20' : 'bg-primary/20') : 'bg-muted'
         }`}>
@@ -92,10 +92,10 @@ export default function InboxPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-120px)] gap-0 rounded-2xl border border-border overflow-hidden bg-card">
+    <div className="flex h-[calc(100dvh-118px)] sm:h-[calc(100vh-120px)] gap-0 rounded-2xl border border-border overflow-hidden bg-card min-w-0">
 
       {/* ── Left: Session list ─────────────────────────────────────────── */}
-      <div className="w-72 shrink-0 flex flex-col border-r border-border">
+      <div className={`${selectedPhone ? 'hidden md:flex' : 'flex'} w-full md:w-72 shrink-0 flex-col border-r border-border`}>
         {/* Header */}
         <div className="px-4 py-3.5 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -170,11 +170,19 @@ export default function InboxPage() {
       </div>
 
       {/* ── Right: Conversation thread ─────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={`${selectedPhone ? 'flex' : 'hidden md:flex'} flex-1 flex-col min-w-0`}>
         {selectedPhone ? (
           <>
             {/* Chat header */}
-            <div className="px-5 py-3 border-b border-border flex items-center gap-3 bg-card">
+            <div className="px-3 sm:px-5 py-3 border-b border-border flex items-center gap-3 bg-card min-w-0">
+              <button
+                type="button"
+                onClick={() => setSelectedPhone(null)}
+                className="md:hidden touch-target rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center"
+                aria-label="Back to conversations"
+              >
+                <ArrowLeft size={16} />
+              </button>
               <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                 <User size={14} className="text-primary" />
               </div>
@@ -188,15 +196,15 @@ export default function InboxPage() {
               </div>
 
               {/* Release to Bot (handoff only) + End Chat */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 overflow-x-auto">
                 {selectedSession?.status === 'handoff' && (
                   <button onClick={handleRelease}
-                    className="inline-flex items-center gap-1.5 bg-muted border border-border text-foreground px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-muted/80 transition-colors">
+                    className="inline-flex items-center gap-1.5 bg-muted border border-border text-foreground px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-muted/80 transition-colors whitespace-nowrap">
                     <UserX size={13} /> Release to Bot
                   </button>
                 )}
                 <button onClick={handleEnd}
-                  className="inline-flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-500/20 transition-colors">
+                  className="inline-flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-500/20 transition-colors whitespace-nowrap">
                   End Chat
                 </button>
               </div>
@@ -204,7 +212,7 @@ export default function InboxPage() {
 
             {/* Handoff banner */}
             {selectedSession?.status === 'handoff' && (
-              <div className="px-5 py-2.5 bg-orange-500/10 border-b border-orange-500/20 flex items-center gap-2">
+              <div className="px-3 sm:px-5 py-2.5 bg-orange-500/10 border-b border-orange-500/20 flex items-center gap-2">
                 <AlertTriangle size={14} className="text-orange-400 shrink-0" />
                 <p className="text-xs text-orange-400 font-medium">
                   This session is in handoff — the bot is silent. Reply below or click "Release to Bot" to hand back to automation.
@@ -213,7 +221,7 @@ export default function InboxPage() {
             )}
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 bg-background/40">
+            <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 bg-background/40">
               {loadingMessages ? (
                 <div className="flex items-center justify-center h-32 gap-2 text-muted-foreground">
                   <RefreshCw size={14} className="animate-spin" /><span className="text-xs">Loading…</span>
@@ -231,7 +239,7 @@ export default function InboxPage() {
             </div>
 
             {/* Reply box — always visible when a session is selected */}
-            <div className="px-4 py-3 border-t border-border bg-card">
+            <div className="px-3 sm:px-4 py-3 border-t border-border bg-card safe-area-page">
               <div className="flex items-end gap-2">
                 <div className="flex-1 relative">
                   <textarea

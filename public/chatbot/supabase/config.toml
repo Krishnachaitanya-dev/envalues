@@ -1,0 +1,4 @@
+# Supabase Edge Functions Configuration
+
+[functions.whatsapp-webhook]
+verify_jwt = false  # We handle webhook verification ourselves

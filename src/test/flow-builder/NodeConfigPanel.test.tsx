@@ -49,6 +49,20 @@ function renderPanel(overrides: Partial<ComponentProps<typeof NodeConfigPanel>> 
 }
 
 describe('NodeConfigPanel media editor', () => {
+  it('renders a single unified message content composer', () => {
+    renderPanel()
+
+    expect(screen.getByText('Message content')).toBeInTheDocument()
+    expect(screen.getByText('Unified message preview')).toBeInTheDocument()
+    expect(screen.getByText('Media inside this message')).toBeInTheDocument()
+    expect(screen.getByText('Links inside this message')).toBeInTheDocument()
+    expect(screen.getByText('Quick replies inside this message')).toBeInTheDocument()
+    expect(screen.queryByText('Message text')).not.toBeInTheDocument()
+    expect(screen.queryByText('Media attachments')).not.toBeInTheDocument()
+    expect(screen.queryByText('External links')).not.toBeInTheDocument()
+    expect(screen.queryByText('Quick Reply Buttons')).not.toBeInTheDocument()
+  })
+
   it('normalizes legacy media fields and saves only attachments/links', async () => {
     const onUpdateConfig = vi.fn<ComponentProps<typeof NodeConfigPanel>['onUpdateConfig']>(() => Promise.resolve())
     renderPanel({ onUpdateConfig })
@@ -64,6 +78,33 @@ describe('NodeConfigPanel media editor', () => {
       url: 'https://example.com/old.pdf',
       source: 'url',
     })
+  })
+
+  it('saves text, attachments, links, and buttons together on one message node config', async () => {
+    const onUpdateConfig = vi.fn<ComponentProps<typeof NodeConfigPanel>['onUpdateConfig']>(() => Promise.resolve())
+    const richNode: FlowNode = {
+      ...messageNode,
+      config: {
+        text: 'Here is everything',
+        attachments: [{ id: 'a1', type: 'image', url: 'https://example.com/photo.jpg', source: 'url' }],
+        links: [{ id: 'l1', label: 'Watch', url: 'https://youtube.com/watch?v=abc' }],
+        buttons: [{ id: 'b1', title: 'Pricing' }],
+      },
+    }
+
+    renderPanel({ node: richNode, allNodes: [richNode], onUpdateConfig })
+    fireEvent.click(screen.getByText('Save node'))
+
+    await waitFor(() => expect(onUpdateConfig).toHaveBeenCalled())
+    const [, params] = onUpdateConfig.mock.calls[0]
+    expect(params.config).toMatchObject({
+      text: 'Here is everything',
+      attachments: [{ id: 'a1', type: 'image', url: 'https://example.com/photo.jpg', source: 'url' }],
+      links: [{ id: 'l1', label: 'Watch', url: 'https://youtube.com/watch?v=abc' }],
+      buttons: [{ id: 'b1', title: 'Pricing' }],
+    })
+    expect(params.config.media_url).toBeUndefined()
+    expect(params.config.media_type).toBeUndefined()
   })
 
   it('blocks upload when owner, flow, or persisted node context is missing', () => {
