@@ -16,7 +16,7 @@ export type Contact = {
   tags: string[]
 }
 
-export function useContactsData(chatbotId: string | null) {
+export function useContactsData(ownerId: string | null) {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -24,13 +24,13 @@ export function useContactsData(chatbotId: string | null) {
   const [selectedTag, setSelectedTag] = useState<string>('all')
 
   const load = useCallback(async () => {
-    if (!chatbotId) { setLoading(false); return }
+    if (!ownerId) { setLoading(false); return }
     setLoading(true)
     try {
       const { data, error } = await supabase
         .from('contacts')
         .select('id, phone, first_seen_at, last_active_at, total_messages, notes, tags')
-        .eq('chatbot_id', chatbotId)
+        .eq('owner_id', ownerId)
         .order('last_active_at', { ascending: false })
       if (error) throw error
       setContacts((data ?? []).map(c => ({
@@ -42,7 +42,7 @@ export function useContactsData(chatbotId: string | null) {
     } finally {
       setLoading(false)
     }
-  }, [chatbotId])
+  }, [ownerId])
 
   useEffect(() => { load() }, [load])
 

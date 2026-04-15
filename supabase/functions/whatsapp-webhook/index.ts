@@ -110,7 +110,38 @@ async function isDuplicateMessage(messageId: string, ownerId: string): Promise<b
 
 // ── TurnDeps wiring ───────────────────────────────────────────────────────────
 
-function buildTurnDeps(ownerId: string, ownerReceptionPhone: string | null, ownerCreds: { accessToken: string; phoneNumberId: string }): TurnDeps {
+async function logConversation(
+  requestId: string,
+  ownerId: string,
+  phone: string,
+  direction: 'inbound' | 'outbound',
+  content: string,
+  msgType = 'bot',
+): Promise<void> {
+  const { error } = await supabase.from('conversation_logs').insert({
+    owner_id: ownerId,
+    phone,
+    direction,
+    content,
+    msg_type: msgType,
+  })
+  if (error) console.error(`[${requestId}] conversation_logs ${direction} insert error:`, error)
+}
+
+async function recordContactMessage(requestId: string, ownerId: string, phone: string): Promise<void> {
+  const { error } = await supabase.rpc('record_contact_message', {
+    p_owner_id: ownerId,
+    p_phone: phone,
+  })
+  if (error) console.error(`[${requestId}] record_contact_message error:`, error)
+}
+
+function buildTurnDeps(
+  ownerId: string,
+  ownerReceptionPhone: string | null,
+  ownerCreds: { accessToken: string; phoneNumberId: string },
+  requestId: string,
+): TurnDeps {
   return {
     getNode: async (id) => {
       const { data } = await supabase.from('flow_nodes').select('*').eq('id', id).single()
@@ -140,13 +171,7 @@ function buildTurnDeps(ownerId: string, ownerReceptionPhone: string | null, owne
         await sendWhatsAppMessage(phone, msg, ownerCreds)
         // Log outbound bot message
         const text = msg.type === 'text' ? (msg.text ?? '') : `[${msg.type}] ${msg.url ?? ''}`
-        supabase.from('conversation_logs').insert({
-          owner_id: ownerId,
-          phone,
-          direction: 'outbound',
-          content: text,
-          msg_type: 'bot',
-        }).then(() => {}).catch(() => {})
+        await logConversation(requestId, ownerId, phone, 'outbound', text, 'bot')
       }
     },
 
@@ -266,7 +291,15 @@ async function verifySignature(body: string, signature: string, appSecret: strin
 
 // ── Main receive_message ──────────────────────────────────────────────────────
 
-async function receiveMessage(ownerId: string, phone: string, rawText: string, messageId: string, receptionPhone: string | null, ownerCreds: { accessToken: string; phoneNumberId: string }): Promise<void> {
+async function receiveMessage(
+  ownerId: string,
+  phone: string,
+  rawText: string,
+  messageId: string,
+  receptionPhone: string | null,
+  ownerCreds: { accessToken: string; phoneNumberId: string },
+  requestId: string,
+): Promise<void> {
   // 1. Idempotency — skip if already processed
   try {
     if (await isDuplicateMessage(messageId, ownerId)) return
@@ -302,14 +335,14 @@ async function receiveMessage(ownerId: string, phone: string, rawText: string, m
   if (restart) {
     if (session) await expireSession(session.id)
     const newSession = await createSession(ownerId, phone, restart)
-    const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds)
+    const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds, requestId)
     await executeTurn(newSession, text, deps)
     return
   }
 
   // 7. Active session → continue
   if (session?.status === 'active') {
-    const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds)
+    const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds, requestId)
     await executeTurn(session, text, deps)
     return
   }
@@ -318,10 +351,11 @@ async function receiveMessage(ownerId: string, phone: string, rawText: string, m
   const trigger = resolveTrigger(triggers, text)
   if (!trigger) {
     await sendWhatsAppMessage(phone, { type: 'text', text: "Reply 'hi' to get started." }, ownerCreds)
+    await logConversation(requestId, ownerId, phone, 'outbound', "Reply 'hi' to get started.", 'bot')
     return
   }
   const newSession = await createSession(ownerId, phone, trigger)
-  const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds)
+  const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds, requestId)
   await executeTurn(newSession, text, deps)
 }
 
@@ -398,18 +432,16 @@ serve(async (req: Request) => {
         phoneNumberId: owner.whatsapp_phone_number_id ?? Deno.env.get('WHATSAPP_PHONE_NUMBER_ID') ?? '',
       }
 
-      // Log inbound to conversation_logs (best-effort)
-      supabase.from('conversation_logs').insert({
-        owner_id: owner.id,
-        phone: customerPhone,
-        direction: 'inbound',
-        content: rawText,
-        msg_type: 'bot',
-      }).then(() => {}).catch(() => {})
+      // Persist inbound activity before returning 200 so the edge runtime cannot drop it.
+      await logConversation(requestId, owner.id, customerPhone, 'inbound', rawText, 'bot')
+      await recordContactMessage(requestId, owner.id, customerPhone)
 
-      // Fire-and-forget — WhatsApp needs 200 within 15s
-      receiveMessage(owner.id, customerPhone, rawText, message.id, owner.reception_phone, ownerCreds)
-        .catch(err => console.error(`[${requestId}] receiveMessage error:`, err))
+      // The turn executor has its own short timeout to stay within webhook limits.
+      try {
+        await receiveMessage(owner.id, customerPhone, rawText, message.id, owner.reception_phone, ownerCreds, requestId)
+      } catch (err) {
+        console.error(`[${requestId}] receiveMessage error:`, err)
+      }
 
       return new Response(JSON.stringify({ status: 'ok' }), {
         status: 200,

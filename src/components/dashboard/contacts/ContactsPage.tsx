@@ -19,15 +19,26 @@ const TAG_COLORS: Record<string, string> = {
 }
 
 // ── Contact detail panel ─────────────────────────────────────────────────────
-function ContactPanel({ contact, onClose }: { contact: Contact; onClose: () => void }) {
-  const { saveNotes, toggleTag, saving } = useContactsData(null)
+function ContactPanel({
+  contact,
+  onClose,
+  onSaveNotes,
+  onToggleTag,
+  saving,
+}: {
+  contact: Contact
+  onClose: () => void
+  onSaveNotes: (contactId: string, notes: string) => Promise<boolean>
+  onToggleTag: (contactId: string, tag: string) => Promise<boolean>
+  saving: boolean
+}) {
   const [notes, setNotes] = useState(contact.notes ?? '')
   const [saved, setSaved] = useState(false)
   const { toast } = useToast()
   const navigate = useNavigate()
 
   const handleSaveNotes = async () => {
-    const ok = await saveNotes(contact.id, notes)
+    const ok = await onSaveNotes(contact.id, notes)
     if (ok) {
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -37,7 +48,7 @@ function ContactPanel({ contact, onClose }: { contact: Contact; onClose: () => v
   }
 
   const handleToggleTag = async (tag: string) => {
-    await toggleTag(contact.id, tag)
+    await onToggleTag(contact.id, tag)
   }
 
   return (
@@ -129,9 +140,27 @@ function ContactPanel({ contact, onClose }: { contact: Contact; onClose: () => v
 
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function ContactsPage() {
-  const { chatbot } = useDashboard()
-  const { contacts, totalContacts, loading, search, setSearch, selectedTag, setSelectedTag, exportCSV, refresh } = useContactsData(chatbot?.id ?? null)
+  const { ownerData } = useDashboard()
+  const { contacts, totalContacts, loading, saving, search, setSearch, selectedTag, setSelectedTag, saveNotes, toggleTag, exportCSV, refresh } = useContactsData(ownerData?.id ?? null)
   const [selected, setSelected] = useState<Contact | null>(null)
+
+  const handlePanelSaveNotes = async (contactId: string, notes: string) => {
+    const ok = await saveNotes(contactId, notes)
+    if (ok) setSelected(prev => prev?.id === contactId ? { ...prev, notes } : prev)
+    return ok
+  }
+
+  const handlePanelToggleTag = async (contactId: string, tag: string) => {
+    const contact = selected?.id === contactId ? selected : contacts.find(c => c.id === contactId)
+    const nextTags = contact
+      ? contact.tags.includes(tag)
+        ? contact.tags.filter(t => t !== tag)
+        : [...contact.tags, tag]
+      : []
+    const ok = await toggleTag(contactId, tag)
+    if (ok) setSelected(prev => prev?.id === contactId ? { ...prev, tags: nextTags } : prev)
+    return ok
+  }
 
   return (
     <div className="flex min-h-[calc(100dvh-118px)] md:h-[calc(100vh-120px)] gap-0 rounded-2xl border border-border overflow-hidden bg-card min-w-0">
@@ -269,6 +298,9 @@ export default function ContactsPage() {
           key={selected.id}
           contact={selected}
           onClose={() => setSelected(null)}
+          onSaveNotes={handlePanelSaveNotes}
+          onToggleTag={handlePanelToggleTag}
+          saving={saving}
         />
       )}
     </div>
