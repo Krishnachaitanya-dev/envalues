@@ -14,7 +14,7 @@ The old parent repository remains backed up at `C:\Users\krish\repo-migration\al
 - Excluded unrelated parent-repo history such as Terraform, OCI, docker-compose, database backup, and old Evolution backend commits.
 - Removed `.env` and `public/chatbot/frontend/.env` from the extracted history.
 - Set `origin` to `https://github.com/Krishnachaitanya-dev/envalues.git`.
-- Kept the old `alachat-platform` GitHub remote as `alachat-platform` for reference only.
+- Removed the old `alachat-platform` remote from the clean workspace to avoid accidental pushes.
 
 ## Future Workflow
 
