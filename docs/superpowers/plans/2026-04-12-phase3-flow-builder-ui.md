@@ -110,14 +110,14 @@ describe('flow-types exports', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-cd "c:/Users/krish/Downloads/alachat-main (3)/alachat-main" && npm test -- --run src/test/flow-builder/flow-types.test.ts
+cd "C:/Users/krish/Projects/envalues" && npm test -- --run src/test/flow-builder/flow-types.test.ts
 ```
 Expected: FAIL — "Cannot find module '@/integrations/supabase/flow-types'"
 
 - [ ] **Step 3: Install `@xyflow/react`**
 
 ```bash
-cd "c:/Users/krish/Downloads/alachat-main (3)/alachat-main" && npm install @xyflow/react
+cd "C:/Users/krish/Projects/envalues" && npm install @xyflow/react
 ```
 Expected: `@xyflow/react` added to `node_modules`.
 

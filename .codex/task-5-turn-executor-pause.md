@@ -1,7 +1,7 @@
 # Task: Fix Turn Executor — Pause at Message Nodes with Conditional Edges
 
 ## Project
-`c:/Users/krish/Downloads/alachat-main (3)/alachat-main`, branch `feat/phase3-cicd-infra`
+`C:/Users/krish/Projects/envalues`, branch `main`
 
 ## The Bug
 When a user sends "hi", the flow engine:
@@ -94,7 +94,7 @@ No changes needed — `session.context` is already `Record<string, unknown>` so 
 
 Run full test suite:
 ```bash
-cd "c:/Users/krish/Downloads/alachat-main (3)/alachat-main"
+cd "C:/Users/krish/Projects/envalues"
 npm run test
 ```
 

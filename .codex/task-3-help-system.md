@@ -1,8 +1,8 @@
 # Task: Build In-App Help System
 
 ## Project
-AlaChat at `c:/Users/krish/Downloads/alachat-main (3)/alachat-main`
-Branch: `feat/phase3-cicd-infra`
+AlaChat at `C:/Users/krish/Projects/envalues`
+Branch: `main`
 Path alias: `@/*` → `src/*`
 Stack: React 18 + TypeScript + Vite + Tailwind CSS + shadcn/ui (Radix) + React Router v6
 
@@ -154,7 +154,7 @@ Scheduler
 
 ## Run Tests
 ```bash
-cd "c:/Users/krish/Downloads/alachat-main (3)/alachat-main"
+cd "C:/Users/krish/Projects/envalues"
 npm run test
 ```
 All tests must pass.

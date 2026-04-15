@@ -1,8 +1,8 @@
 # Task: Add WhatsApp Interactive Button Support
 
 ## Project
-AlaChat at `c:/Users/krish/Downloads/alachat-main (3)/alachat-main`
-Branch: `feat/phase3-cicd-infra`
+AlaChat at `C:/Users/krish/Projects/envalues`
+Branch: `main`
 Path alias: `@/*` → `src/*`
 
 ## Goal
@@ -125,7 +125,7 @@ Follow the exact same styling/patterns as other fields in that config panel.
 
 ## Run Tests
 ```bash
-cd "c:/Users/krish/Downloads/alachat-main (3)/alachat-main"
+cd "C:/Users/krish/Projects/envalues"
 npm run test
 ```
 All tests must pass.

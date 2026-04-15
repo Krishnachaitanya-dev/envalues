@@ -1,7 +1,7 @@
 # Task: Fix Publish/Unpublish Trigger Sync + Template Buttons
 
 ## Project
-`c:/Users/krish/Downloads/alachat-main (3)/alachat-main`, branch `feat/phase3-cicd-infra`
+`C:/Users/krish/Projects/envalues`, branch `main`
 
 ## Problems to Fix
 
@@ -47,7 +47,7 @@ Read the full migration file to understand the structure before editing.
 
 ## Tests
 ```bash
-cd "c:/Users/krish/Downloads/alachat-main (3)/alachat-main"
+cd "C:/Users/krish/Projects/envalues"
 npm run test
 ```
 All must pass.

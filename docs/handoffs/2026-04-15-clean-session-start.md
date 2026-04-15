@@ -14,14 +14,14 @@ The GitHub repo is:
 
 The active day-to-day branch is:
 
-`feat/phase3-cicd-infra`
+`main`
 
-Use `feat/phase3-cicd-infra` for normal follow-up work after this setup checkpoint. The `infra/clean-repo-bootstrap-2026-04-15` branch remains as the bootstrap/review branch.
+Use `main` for normal follow-up work after this setup checkpoint. Previous branch names came from the old parent repository setup and should not be used for new work.
 
 ## Current Local Setup
 
 - `origin` points to `Krishnachaitanya-dev/envalues`.
-- The old `alachat-platform` remote exists only as a reference remote.
+- No old project remotes are configured.
 - `.git` is inside this folder, so Git no longer scans `C:\Users\krish`.
 - Graphify has been regenerated in this folder.
 - Codex Graphify integration is stored in `.codex/hooks.json`.
