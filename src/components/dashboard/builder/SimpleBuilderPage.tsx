@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Plus, Zap, ArrowRight, Workflow, Lock, ExternalLink, MessageSquare } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Plus, Zap, ArrowRight, Workflow, Lock, ExternalLink, MessageSquare, Eye, EyeOff } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { useDashboard } from '@/contexts/DashboardContext'
@@ -7,16 +7,14 @@ import { useFlowBuilder } from '@/hooks/useFlowBuilder'
 import { isSimpleCompatible } from '@/lib/simpleFlowCompat'
 import { graphToSimple, simpleToGraph } from '@/lib/simpleFlowAdapter'
 import type { FlowNode, FlowEdge, FlowTrigger } from '@/integrations/supabase/flow-types'
-import type { SimpleFlow, SimpleStep } from '@/types/simpleFlow'
+import type { SimpleFlow, SimpleStep, SimpleTrigger } from '@/types/simpleFlow'
 import { supabase } from '@/integrations/supabase/client'
-import StepList from './simple/StepList'
 import StepEditor from './simple/StepEditor'
-import FlowKeywordEditor from './simple/FlowKeywordEditor'
+import TriggerPanel from './simple/TriggerPanel'
 import ConversationPreview from './simple/ConversationPreview'
+import SimpleCanvas from './simple/SimpleCanvas'
 
 interface FlowMeta { nodes: FlowNode[]; edges: FlowEdge[]; triggers: FlowTrigger[] }
-
-// ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function SimpleBuilderPage() {
   const navigate = useNavigate()
@@ -29,13 +27,13 @@ export default function SimpleBuilderPage() {
   const [flowMeta, setFlowMeta] = useState<Record<string, FlowMeta>>({})
   const [metaLoading, setMetaLoading] = useState(false)
 
-  // Editor state
   const [simpleFlow, setSimpleFlow] = useState<SimpleFlow | null>(null)
   const [editorMeta, setEditorMeta] = useState<FlowMeta | null>(null)
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(true)
 
-  // ── Flow list: fetch meta for compat classification ──
+  // ── Flow list meta fetch ──
   useEffect(() => {
     if (fb.flows.length === 0 || activeFlowId) return
     const flowIds = fb.flows.map(f => f.id)
@@ -57,7 +55,7 @@ export default function SimpleBuilderPage() {
     }).finally(() => setMetaLoading(false))
   }, [fb.flows, activeFlowId])
 
-  // ── Editor: load flow when ?flow= is set ──
+  // ── Editor: load flow ──
   useEffect(() => {
     if (!activeFlowId) { setSimpleFlow(null); setEditorMeta(null); return }
     const flow = fb.flows.find(f => f.id === activeFlowId)
@@ -73,7 +71,7 @@ export default function SimpleBuilderPage() {
       setEditorMeta({ nodes: ns, edges: es, triggers: ts })
       const sf = graphToSimple(flow, ns, es, ts)
       setSimpleFlow(sf)
-      setSelectedStepId(sf.steps[0]?.id ?? null)
+      setSelectedStepId(null)
     })
   }, [activeFlowId, fb.flows])
 
@@ -91,55 +89,59 @@ export default function SimpleBuilderPage() {
     if (!simpleFlow || !user?.id || !editorMeta) return
     setSaving(true)
     try {
-      const { nodes, edges } = simpleToGraph(simpleFlow, user.id, editorMeta.nodes)
+      const { nodes, edges, triggers } = simpleToGraph(simpleFlow, user.id, editorMeta.nodes)
       await supabase.from('flow_edges').delete().eq('flow_id', simpleFlow.id)
       await supabase.from('flow_nodes').delete().eq('flow_id', simpleFlow.id)
-      if (nodes.length > 0) await (supabase.from('flow_nodes') as any).insert(nodes)
-      if (edges.length > 0) await (supabase.from('flow_edges') as any).insert(edges)
-      // Sync keyword triggers
+      if (nodes.length > 0) await (supabase.from('flow_nodes') as unknown as { insert: (rows: unknown[]) => Promise<unknown> }).insert(nodes)
+      if (edges.length > 0) await (supabase.from('flow_edges') as unknown as { insert: (rows: unknown[]) => Promise<unknown> }).insert(edges)
       await supabase.from('flow_triggers').delete().eq('flow_id', simpleFlow.id).eq('trigger_type', 'keyword')
-      if (simpleFlow.keywords.length > 0) {
-        await (supabase.from('flow_triggers') as any).insert(
-          simpleFlow.keywords.map((kw, i) => ({
-            owner_id: user.id,
-            flow_id: simpleFlow.id,
-            trigger_type: 'keyword',
-            trigger_value: kw,
-            normalized_trigger_value: kw.toLowerCase(),
-            priority: i,
-            is_active: true,
-            target_node_id: null,
-          }))
-        )
+      if (triggers.length > 0) {
+        await (supabase.from('flow_triggers') as unknown as { insert: (rows: unknown[]) => Promise<unknown> }).insert(triggers)
       }
-      // Update editorMeta so subsequent saves are correct
       const [nr, er, tr] = await Promise.all([
         supabase.from('flow_nodes').select('*').eq('flow_id', simpleFlow.id),
         supabase.from('flow_edges').select('*').eq('flow_id', simpleFlow.id),
         supabase.from('flow_triggers').select('*').eq('flow_id', simpleFlow.id),
       ])
-      setEditorMeta({ nodes: (nr.data ?? []) as FlowNode[], edges: (er.data ?? []) as FlowEdge[], triggers: (tr.data ?? []) as FlowTrigger[] })
+      setEditorMeta({
+        nodes: (nr.data ?? []) as FlowNode[],
+        edges: (er.data ?? []) as FlowEdge[],
+        triggers: (tr.data ?? []) as FlowTrigger[],
+      })
     } finally {
       setSaving(false)
     }
   }, [simpleFlow, user, editorMeta])
 
-  const handleAddStep = useCallback((type: 'message' | 'question') => {
-    const newStep: SimpleStep = {
-      id: crypto.randomUUID(),
-      type,
-      mode: type === 'question' ? 'open_text' : undefined,
-      text: '',
-      _isNew: true,
-    }
-    setSimpleFlow(prev => prev ? { ...prev, steps: [...prev.steps, newStep] } : prev)
-    setSelectedStepId(newStep.id)
+  const handleAddStep = useCallback((kind: 'message' | 'open_text' | 'button_choices') => {
+    setSimpleFlow(prev => {
+      if (!prev) return prev
+      const i = prev.steps.length
+      const newStep: SimpleStep = {
+        id: crypto.randomUUID(),
+        type: kind === 'message' ? 'message' : 'question',
+        mode: kind === 'message' ? undefined : kind,
+        text: '',
+        buttons: kind === 'button_choices' ? [{ id: crypto.randomUUID(), title: '', nextStepId: null }] : undefined,
+        position: { x: 220 + (i % 3) * 320, y: 40 + Math.floor(i / 3) * 260 },
+        _isNew: true,
+      }
+      setSelectedStepId(newStep.id)
+      return { ...prev, steps: [...prev.steps, newStep] }
+    })
   }, [])
 
   const handleDeleteStep = useCallback((id: string) => {
     setSimpleFlow(prev => {
       if (!prev) return prev
-      return { ...prev, steps: prev.steps.filter(s => s.id !== id) }
+      // Detach refs: clear any nextStepId pointing to deleted id, and any trigger targeting it
+      const cleanedSteps = prev.steps.filter(s => s.id !== id).map(s => ({
+        ...s,
+        nextStepId: s.nextStepId === id ? null : s.nextStepId,
+        buttons: s.buttons?.map(b => b.nextStepId === id ? { ...b, nextStepId: null } : b),
+      }))
+      const cleanedTriggers = prev.triggers.map(t => t.targetStepId === id ? { ...t, targetStepId: cleanedSteps[0]?.id ?? null } : t)
+      return { ...prev, steps: cleanedSteps, triggers: cleanedTriggers }
     })
     setSelectedStepId(prev => prev === id ? null : prev)
   }, [])
@@ -148,30 +150,58 @@ export default function SimpleBuilderPage() {
     setSimpleFlow(prev => prev ? { ...prev, steps: prev.steps.map(s => s.id === updated.id ? updated : s) } : prev)
   }, [])
 
+  const handleStepsChange = useCallback((steps: SimpleStep[]) => {
+    setSimpleFlow(prev => prev ? { ...prev, steps } : prev)
+  }, [])
+
+  const handleTriggersChange = useCallback((triggers: SimpleTrigger[]) => {
+    setSimpleFlow(prev => prev ? { ...prev, triggers } : prev)
+  }, [])
+
   const statusColor: Record<string, string> = {
     published: 'bg-green-500/10 text-green-400 border-green-500/20',
     draft: 'bg-muted text-muted-foreground border-border',
     archived: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
   }
 
+  const canSave = useMemo(() => {
+    if (!simpleFlow) return false
+    const hasStep = simpleFlow.steps.length > 0
+    const hasTrigger = simpleFlow.triggers.some(t => t.keywords.length > 0 && t.targetStepId)
+    return hasStep && hasTrigger
+  }, [simpleFlow])
+
   // ── Editor view ──
   if (activeFlowId && simpleFlow) {
     const selectedStep = simpleFlow.steps.find(s => s.id === selectedStepId) ?? null
     return (
       <div className="flex flex-col h-full min-h-[calc(100dvh-52px)] bg-background overflow-hidden">
-        {/* Editor header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => navigate('/dashboard/builder')}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
             >
               ← Back
             </button>
-            <span className="text-muted-foreground/40">|</span>
-            <span className="text-sm font-medium">{simpleFlow.name}</span>
+            <span className="text-muted-foreground/40 shrink-0">|</span>
+            <span className="text-sm font-medium truncate">{simpleFlow.name}</span>
+            {!canSave && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-yellow-500/20 bg-yellow-500/10 text-yellow-400 shrink-0">
+                Add a trigger + step to save
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="ghost" size="sm"
+              className="text-xs text-muted-foreground gap-1.5"
+              onClick={() => setPreviewOpen(o => !o)}
+              title={previewOpen ? 'Hide preview' : 'Show preview'}
+            >
+              {previewOpen ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              Preview
+            </Button>
             <Button
               variant="ghost" size="sm"
               className="text-xs text-muted-foreground gap-1.5"
@@ -180,49 +210,57 @@ export default function SimpleBuilderPage() {
               <Workflow className="h-3.5 w-3.5" />
               Advanced
             </Button>
-            <Button size="sm" onClick={handleSave} disabled={saving} className="gap-2 min-w-[70px]">
+            <Button size="sm" onClick={handleSave} disabled={saving || !canSave} className="gap-2 min-w-[70px]">
               {saving ? 'Saving…' : 'Save'}
             </Button>
           </div>
         </div>
 
-        {/* Keywords bar */}
-        <div className="px-5 py-3 border-b border-border shrink-0">
-          <FlowKeywordEditor
-            keywords={simpleFlow.keywords}
-            onChange={kws => setSimpleFlow(prev => prev ? { ...prev, keywords: kws } : prev)}
-          />
-        </div>
-
-        {/* Three-column editor */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Step list */}
-          <div className="w-52 border-r border-border shrink-0 overflow-hidden flex flex-col">
-            <StepList
+          {/* Triggers */}
+          <div className="w-60 border-r border-border shrink-0 overflow-hidden flex flex-col">
+            <TriggerPanel
+              triggers={simpleFlow.triggers}
               steps={simpleFlow.steps}
-              selectedStepId={selectedStepId}
-              onSelectStep={setSelectedStepId}
-              onAddMessageStep={() => handleAddStep('message')}
-              onAddQuestionStep={() => handleAddStep('question')}
-              onDeleteStep={handleDeleteStep}
+              onChange={handleTriggersChange}
             />
           </div>
 
-          {/* Step editor */}
-          <div className="flex-1 overflow-y-auto min-w-0">
-            {selectedStep ? (
-              <StepEditor step={selectedStep} allSteps={simpleFlow.steps} onChange={handleStepChange} />
-            ) : (
-              <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                Select a step or add a new one.
-              </div>
-            )}
+          {/* Canvas */}
+          <div className="flex-1 relative overflow-hidden min-w-0">
+            <SimpleCanvas
+              flow={simpleFlow}
+              selectedStepId={selectedStepId}
+              onSelectStep={setSelectedStepId}
+              onChangeSteps={handleStepsChange}
+              onDeleteStep={handleDeleteStep}
+              onAddStep={handleAddStep}
+            />
           </div>
 
-          {/* Live preview */}
-          <div className="hidden lg:flex w-72 border-l border-border shrink-0 p-3 overflow-hidden">
-            <ConversationPreview flow={simpleFlow} />
-          </div>
+          {/* Inspector: step editor or preview */}
+          {selectedStep ? (
+            <div className="w-[360px] border-l border-border shrink-0 overflow-hidden flex flex-col">
+              <StepEditor
+                step={selectedStep}
+                ownerId={user?.id ?? null}
+                flowId={simpleFlow.id}
+                onChange={handleStepChange}
+                onDelete={handleDeleteStep}
+              />
+            </div>
+          ) : previewOpen ? (
+            <div className="hidden lg:flex w-72 border-l border-border shrink-0 p-3 overflow-hidden">
+              <ConversationPreview flow={simpleFlow} />
+            </div>
+          ) : null}
+
+          {/* Preview overlay when step is selected AND preview toggled on */}
+          {selectedStep && previewOpen && (
+            <div className="hidden xl:flex w-72 border-l border-border shrink-0 p-3 overflow-hidden">
+              <ConversationPreview flow={simpleFlow} />
+            </div>
+          )}
         </div>
       </div>
     )
@@ -234,7 +272,7 @@ export default function SimpleBuilderPage() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <div>
           <h1 className="text-xl font-semibold font-syne">Conversation Builder</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Build your WhatsApp chatbot step by step</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Build WhatsApp chatbots visually — no code.</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" className="text-muted-foreground text-xs gap-1.5" onClick={() => navigate('/dashboard/builder/advanced')}>
@@ -280,8 +318,6 @@ export default function SimpleBuilderPage() {
     </div>
   )
 }
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function EmptyState({ onCreateFlow, creating }: { onCreateFlow: () => void; creating: boolean }) {
   return (
