@@ -90,7 +90,7 @@ export interface InputConfig   { prompt: string; variable: string; timeout_secon
 export interface ConditionConfig { /* empty — logic lives in edges */ }
 export interface ApiConfig     { url: string; method: 'GET'|'POST'|'PUT'|'DELETE'; headers?: Record<string,string>; body?: string; response_variable?: string }
 export interface DelayConfig   { seconds: number }
-export interface JumpConfig    { target_node_id: string }
+export interface JumpConfig    { target_node_id: string; target_flow_id?: string }
 export interface SubflowConfig { target_flow_id: string }
 export interface HandoffConfig { message?: string; notify?: boolean }
 export interface EndConfig     { farewell_message?: string }
