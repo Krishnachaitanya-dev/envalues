@@ -33,11 +33,11 @@ function DashboardShell() {
   )
 
   return (
-    <div className="h-dvh bg-background flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-background flex flex-col overflow-hidden">
       <SidebarProvider
         defaultOpen={false}
-        className="flex-1 overflow-hidden"
-        style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}
+        className="flex h-full min-h-0 w-full overflow-hidden"
+        style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, maxHeight: '100%' }}
       >
         <TopBar />
         <div className="flex-1 min-h-0 flex w-full min-w-0 overflow-hidden">
