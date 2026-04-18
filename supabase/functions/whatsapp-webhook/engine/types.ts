@@ -113,6 +113,9 @@ export interface InputConfig {
   prompt: string
   store_as: string
   timeout_secs: number
+  attachments?: Array<{ type: string; url: string; caption?: string; storage_path?: string; source?: string }>
+  media_url?: string
+  media_type?: 'image' | 'video' | 'document'
   validation?: { type: string; value: string; error_message: string }
 }
 

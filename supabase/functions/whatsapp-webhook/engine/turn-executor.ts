@@ -1,5 +1,5 @@
 // supabase/functions/whatsapp-webhook/engine/turn-executor.ts
-import type { FlowNode, FlowEdge, FlowSession, OutboundMessage } from './types.ts'
+import type { FlowNode, FlowEdge, FlowSession, OutboundMessage, InputConfig } from './types.ts'
 import { evaluateEdges } from './edge-evaluator.ts'
 import {
   executeStartNode, executeMessageNode, executeEndNode,
@@ -25,9 +25,44 @@ export interface TurnDeps {
 const TURN_TIMEOUT_MS = 3000
 const INPUT_PROMPTED_CONTEXT_KEY = '__input_prompted_at'
 
+type OutboundMediaType = Extract<OutboundMessage['type'], 'image' | 'video' | 'document'>
+
+function compactTextParts(parts: Array<string | undefined>): string {
+  return parts
+    .map((part) => (part ?? '').trim())
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function normalizeOutboundMediaType(type: unknown): OutboundMediaType {
+  return type === 'image' || type === 'video' || type === 'document' ? type : 'document'
+}
+
 function inputPromptMessages(node: FlowNode): OutboundMessage[] {
-  const prompt = typeof node.config.prompt === 'string' ? node.config.prompt.trim() : ''
-  return prompt ? [{ type: 'text', text: prompt }] : []
+  const config = node.config as unknown as InputConfig
+  const prompt = typeof config.prompt === 'string' ? config.prompt.trim() : ''
+  const attachments = Array.isArray(config.attachments) && config.attachments.length > 0
+    ? config.attachments
+    : config.media_url
+      ? [{ type: config.media_type ?? 'document', url: config.media_url }]
+      : []
+  const validAttachments = attachments.filter((att) => att.url)
+
+  if (validAttachments.length === 0) {
+    return prompt ? [{ type: 'text', text: prompt }] : []
+  }
+
+  let promptApplied = false
+  return validAttachments.map((att) => {
+    const shouldApplyPrompt = !promptApplied
+    promptApplied = true
+    const mediaType = normalizeOutboundMediaType(att.type)
+    return {
+      type: mediaType,
+      url: att.url,
+      caption: shouldApplyPrompt ? compactTextParts([prompt, att.caption]) || undefined : att.caption,
+    }
+  })
 }
 
 async function pauseAtInputNode(session: FlowSession, node: FlowNode, deps: TurnDeps): Promise<void> {

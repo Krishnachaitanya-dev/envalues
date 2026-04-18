@@ -1,7 +1,7 @@
 // src/test/engine/turn-executor.test.ts
 import { describe, it, expect, vi } from 'vitest'
 import { executeTurn, TurnDeps } from '../../../supabase/functions/whatsapp-webhook/engine/turn-executor'
-import type { FlowNode, FlowEdge, FlowSession } from '../../../supabase/functions/whatsapp-webhook/engine/types'
+import type { FlowNode, FlowEdge, FlowSession, OutboundMessage } from '../../../supabase/functions/whatsapp-webhook/engine/types'
 
 function makeSession(overrides: Partial<FlowSession> = {}): FlowSession {
   return {
@@ -106,6 +106,36 @@ describe('executeTurn', () => {
     expect(deps.sentMessages).toContain('Your name?')
     expect(lastSave.status).toBe('active')
     expect(deps.closedSessions).toHaveLength(0)
+  })
+
+  it('sends input prompt attachments before waiting for text', async () => {
+    const nodes = [
+      makeNode('n_start', 'start'),
+      makeNode('n_input', 'input', {
+        prompt: 'Please share your name and flat number.',
+        store_as: 'lead_details',
+        timeout_secs: 300,
+        attachments: [
+          { type: 'image', url: 'https://example.com/logo.png', caption: 'Project logo' },
+        ],
+      }),
+    ]
+    const edges = [makeEdge('n_start', 'n_input')]
+    const deps = makeDeps(nodes, edges)
+    const sent: OutboundMessage[] = []
+    deps.enqueueMessages = async (messages) => { sent.push(...messages) }
+    const session = makeSession({ current_node_id: 'n_start' })
+
+    await executeTurn(session, '', deps)
+
+    expect(sent).toEqual([
+      {
+        type: 'image',
+        url: 'https://example.com/logo.png',
+        caption: 'Please share your name and flat number.\n\nProject logo',
+      },
+    ])
+    expect(session.current_node_id).toBe('n_input')
   })
 
   it('does not resend an input prompt that was already shown for the same input node', async () => {

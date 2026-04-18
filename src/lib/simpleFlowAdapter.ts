@@ -9,7 +9,11 @@ import { isYouTubeUrl } from '@/types/simpleFlow'
 
 // ─── Graph → Simple ──────────────────────────────────────────────────────────
 
-function attachmentsFromConfig(cfg: MessageConfig): SimpleMedia[] {
+type AttachmentConfigLike = {
+  attachments?: MessageConfig['attachments']
+}
+
+function attachmentsFromConfig(cfg: AttachmentConfigLike): SimpleMedia[] {
   const raw = Array.isArray(cfg.attachments) ? cfg.attachments : []
   return raw
     .filter(a => typeof a?.url === 'string' && a.url.trim())
@@ -108,6 +112,7 @@ export function graphToSimple(
         type: 'question',
         mode: 'open_text',
         text: cfg.prompt ?? '',
+        attachments: attachmentsFromConfig(cfg as unknown as AttachmentConfigLike),
         nextStepId: isVisibleSimpleNode(nextViaAlways) ? nextViaAlways.id : null,
       }, fallbackPos)
       if (alwaysEdge) walk(alwaysEdge.target_node_id)
@@ -238,7 +243,13 @@ export function simpleToGraph(
       nodes.push({
         id: step.id, flow_id: flowId, owner_id: ownerId, node_type: 'input',
         label: step.text.slice(0, 40) || 'Question',
-        config: { prompt: step.text, variable: varKey, store_as: varKey, timeout_secs: 300 } as Record<string, unknown>,
+        config: {
+          prompt: step.text,
+          variable: varKey,
+          store_as: varKey,
+          timeout_secs: 300,
+          attachments: (step.attachments ?? []).map(attachmentToConfig),
+        } as Record<string, unknown>,
         position_x: px, position_y: py,
       })
     } else {

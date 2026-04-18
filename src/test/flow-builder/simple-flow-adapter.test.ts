@@ -92,6 +92,74 @@ describe('simple flow adapter', () => {
     })
   })
 
+  it('saves and loads media on open text questions', () => {
+    const flow: SimpleFlow = {
+      id: 'flow-1',
+      name: 'Lead capture',
+      status: 'draft',
+      triggers: [
+        { id: 'trigger-1', keywords: ['lead'], targetStepId: 'capture' },
+      ],
+      steps: [
+        {
+          id: 'capture',
+          type: 'question',
+          mode: 'open_text',
+          text: 'Please share your name and flat number.',
+          nextStepId: 'done',
+          attachments: [
+            {
+              id: 'logo',
+              type: 'image',
+              url: 'https://example.com/logo.png',
+              caption: 'Project logo',
+              source: 'url',
+            },
+          ],
+        },
+        { id: 'done', type: 'end', text: 'Thank you. Our team will contact you shortly.' },
+      ],
+    }
+
+    const graph = simpleToGraph(flow, 'owner-1', [])
+    const inputNode = graph.nodes.find(node => node.id === 'capture')!
+
+    expect(inputNode.node_type).toBe('input')
+    expect(inputNode.config.attachments).toEqual([
+      expect.objectContaining({
+        id: 'logo',
+        type: 'image',
+        url: 'https://example.com/logo.png',
+        caption: 'Project logo',
+      }),
+    ])
+
+    const loaded = graphToSimple(
+      { id: flow.id, name: flow.name, status: flow.status },
+      graph.nodes.map(node => ({ ...node, created_at: '', updated_at: '' })),
+      graph.edges.map(edge => ({ ...edge, created_at: '' })),
+      graph.triggers.map((trigger, index) => ({
+        id: `trigger-${index}`,
+        created_at: '',
+        normalized_trigger_value: null,
+        ...trigger,
+      })),
+    )
+
+    expect(loaded.steps[0]).toMatchObject({
+      id: 'capture',
+      type: 'question',
+      mode: 'open_text',
+      attachments: [
+        expect.objectContaining({
+          id: 'logo',
+          type: 'image',
+          url: 'https://example.com/logo.png',
+        }),
+      ],
+    })
+  })
+
   it('loads explicit end nodes as simple end steps', () => {
     const simple = graphToSimple(
       { id: 'flow-1', name: 'Loaded', status: 'draft' },

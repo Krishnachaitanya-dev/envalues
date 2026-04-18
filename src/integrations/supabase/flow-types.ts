@@ -87,7 +87,14 @@ export interface MessageConfig {
   buttons?: Array<{ id: string; title: string }>
   list_button_text?: string
 }
-export interface InputConfig   { prompt: string; variable: string; timeout_seconds?: number }
+export interface InputConfig   {
+  prompt: string
+  variable?: string
+  store_as?: string
+  timeout_seconds?: number
+  timeout_secs?: number
+  attachments?: MessageConfig['attachments']
+}
 export interface ConditionConfig { /* empty — logic lives in edges */ }
 export interface ApiConfig     { url: string; method: 'GET'|'POST'|'PUT'|'DELETE'; headers?: Record<string,string>; body?: string; response_variable?: string }
 export interface DelayConfig   { seconds: number }

@@ -141,7 +141,7 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
         />
       </div>
 
-      {step.type === 'message' ? (
+      {(step.type === 'message' || step.type === 'question') ? (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label className="text-xs">Attachments <span className="text-muted-foreground">(max {MAX_SIMPLE_ATTACHMENTS})</span></Label>
