@@ -9,8 +9,9 @@ describe('mobile responsive layout source contract', () => {
 
     expect(dashboard).toContain('overflow-x-hidden')
     expect(dashboard).toContain('safe-area-page')
-    expect(dashboard).toContain('className="min-h-screen flex-col"')
-    expect(dashboard).toContain("isBuilderRoute ? 'p-0'")
+    expect(dashboard).toContain('className="h-full min-h-0 max-h-full flex-col overflow-hidden"')
+    expect(dashboard).toContain('h-[calc(100dvh-52px)]')
+    expect(dashboard).toContain("isBuilderRoute ? 'p-0 overflow-hidden'")
     expect(dashboard).toContain('{!isBuilderRoute && <RightPanel />}')
     expect(admin).toContain('mobileNavOpen')
     expect(admin).toContain('fixed inset-0 z-50 md:hidden')
@@ -25,7 +26,7 @@ describe('mobile responsive layout source contract', () => {
 
     expect(page).toContain('flowListOpen')
     expect(page).toContain('md:hidden')
-    expect(page).toContain('h-[calc(100dvh-52px)]')
+    expect(page).toContain('h-full min-h-0')
     expect(canvas).toContain('useIsMobile')
     expect(canvas).toContain('!isMobile')
     expect(nodePanel).toContain('mobile-sheet')
