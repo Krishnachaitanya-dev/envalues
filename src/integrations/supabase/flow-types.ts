@@ -85,6 +85,7 @@ export interface MessageConfig {
   media_url?: string
   media_type?: 'image' | 'video' | 'document'
   buttons?: Array<{ id: string; title: string }>
+  list_button_text?: string
 }
 export interface InputConfig   { prompt: string; variable: string; timeout_seconds?: number }
 export interface ConditionConfig { /* empty — logic lives in edges */ }

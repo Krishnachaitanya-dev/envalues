@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Send, RefreshCw, Film, FileText, ExternalLink } from 'lucide-react'
 import type { SimpleFlow, SimpleStep, SimpleMedia } from '@/types/simpleFlow'
-import { youTubeEmbedUrl } from '@/types/simpleFlow'
+import { getQuestionResponseMode, youTubeEmbedUrl } from '@/types/simpleFlow'
 
 interface ChatMsg {
   id: string
@@ -9,6 +9,7 @@ interface ChatMsg {
   text?: string
   attachments?: SimpleMedia[]
   buttons?: { id: string; title: string }[]
+  listRows?: { id: string; title: string }[]
 }
 
 export default function ConversationPreview({ flow }: { flow: SimpleFlow }) {
@@ -34,36 +35,57 @@ export default function ConversationPreview({ flow }: { flow: SimpleFlow }) {
     id ? (flow.steps.find(s => s.id === id) ?? null) : null
   , [flow.steps])
 
+  const currentStep = stepById(curStepId)
+  const currentChoices = currentStep?.type === 'question'
+    ? (currentStep.buttons ?? []).filter(choice => choice.title.trim())
+    : []
+  const currentResponseMode = currentStep?.type === 'question' ? getQuestionResponseMode(currentChoices.length) : null
+  const waitingForTypedReply = waitingInput && currentResponseMode === 'open_text'
+
   const runStep = useCallback((stepId: string | null) => {
     if (!stepId) { setFinished(true); return }
     const step = stepById(stepId)
     if (!step) { setFinished(true); return }
+    const choices = step.type === 'question'
+      ? (step.buttons ?? []).filter(choice => choice.title.trim())
+      : []
+    const responseMode = step.type === 'question' ? getQuestionResponseMode(choices.length) : null
+
     setMsgs(prev => [...prev, {
       id: step.id + '-' + Date.now(),
       role: 'bot',
       text: step.text,
       attachments: step.attachments,
-      buttons: step.mode === 'button_choices' ? step.buttons?.map(b => ({ id: b.id, title: b.title })) : undefined,
+      buttons: responseMode === 'buttons' ? choices.map(b => ({ id: b.id, title: b.title })) : undefined,
+      listRows: responseMode === 'list' ? choices.map(b => ({ id: b.id, title: b.title })) : undefined,
     }])
     setCurStepId(stepId)
-    if (step.mode === 'button_choices' || step.mode === 'open_text') {
+
+    if (step.type === 'question') {
       setWaitingInput(true)
+    } else if (step.type === 'end') {
+      setWaitingInput(false)
+      setFinished(true)
     } else {
       setTimeout(() => runStep(step.nextStepId ?? null), 400)
     }
   }, [stepById])
 
   const reset = useCallback(() => {
-    setMsgs([]); setCurStepId(null); setInputText(''); setWaitingInput(false); setFinished(false)
+    setMsgs([])
+    setCurStepId(null)
+    setInputText('')
+    setWaitingInput(false)
+    setFinished(false)
     if (entryStepId) setTimeout(() => runStep(entryStepId), 150)
   }, [entryStepId, runStep])
 
   useEffect(() => { reset() }, [flow.id, currentTrigger?.id])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
 
-  const tapButton = useCallback((title: string) => {
+  const tapChoice = useCallback((title: string) => {
     const step = stepById(curStepId)
-    if (!step || step.mode !== 'button_choices') return
+    if (!step || step.type !== 'question') return
     setMsgs(prev => [...prev, { id: 'u-' + Date.now(), role: 'user', text: title }])
     setWaitingInput(false)
     const btn = step.buttons?.find(b => b.title === title)
@@ -75,7 +97,8 @@ export default function ConversationPreview({ flow }: { flow: SimpleFlow }) {
     const step = stepById(curStepId)
     if (!step) return
     setMsgs(prev => [...prev, { id: 'u-' + Date.now(), role: 'user', text: inputText.trim() }])
-    setInputText(''); setWaitingInput(false)
+    setInputText('')
+    setWaitingInput(false)
     runStep(step.nextStepId ?? null)
   }, [inputText, curStepId, stepById, runStep])
 
@@ -132,11 +155,26 @@ export default function ConversationPreview({ flow }: { flow: SimpleFlow }) {
                     {msg.buttons.map(btn => (
                       <button
                         key={btn.id}
-                        onClick={() => tapButton(btn.title)}
+                        onClick={() => tapChoice(btn.title)}
                         disabled={!waitingInput}
                         className="bg-[#1f2c33] border border-[#2a3942] text-[#00a884] text-[11px] rounded-lg px-3 py-1.5 hover:bg-[#2a3942] transition-colors disabled:opacity-40 disabled:cursor-default text-center"
                       >
                         {btn.title || '(empty)'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {msg.listRows && (
+                  <div className="mt-1 overflow-hidden rounded-lg border border-[#2a3942] bg-[#1f2c33]">
+                    <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#8696a0] border-b border-[#2a3942]">Choose option</div>
+                    {msg.listRows.map(row => (
+                      <button
+                        key={row.id}
+                        onClick={() => tapChoice(row.title)}
+                        disabled={!waitingInput}
+                        className="block w-full border-b border-[#2a3942] px-3 py-2 text-left text-[11px] text-[#00a884] last:border-b-0 hover:bg-[#2a3942] disabled:opacity-40 disabled:cursor-default"
+                      >
+                        {row.title || '(empty)'}
                       </button>
                     ))}
                   </div>
@@ -147,7 +185,7 @@ export default function ConversationPreview({ flow }: { flow: SimpleFlow }) {
             )}
           </div>
         ))}
-        {finished && <p className="text-center text-[#8696a0] text-[10px] py-1">— Conversation ended —</p>}
+        {finished && <p className="text-center text-[#8696a0] text-[10px] py-1">Conversation ended</p>}
         <div ref={bottomRef} />
       </div>
 
@@ -156,13 +194,13 @@ export default function ConversationPreview({ flow }: { flow: SimpleFlow }) {
           value={inputText}
           onChange={e => setInputText(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && submitText()}
-          disabled={!waitingInput || finished}
-          placeholder={waitingInput && !finished ? 'Type a reply…' : ''}
+          disabled={!waitingForTypedReply || finished}
+          placeholder={waitingForTypedReply && !finished ? 'Type a reply...' : ''}
           className="flex-1 bg-[#2a3942] text-white text-[11px] rounded-full px-3 py-1.5 outline-none placeholder:text-[#8696a0] disabled:opacity-30"
         />
         <button
           onClick={submitText}
-          disabled={!inputText.trim() || !waitingInput || finished}
+          disabled={!inputText.trim() || !waitingForTypedReply || finished}
           className="p-1.5 rounded-full bg-primary/80 hover:bg-primary disabled:opacity-30 transition-colors"
         >
           <Send className="h-3 w-3 text-white" />
@@ -204,7 +242,6 @@ function AttachmentBubble({ media }: { media: SimpleMedia }) {
       </div>
     )
   }
-  // document / PDF
   return (
     <a
       href={media.url} target="_blank" rel="noreferrer"

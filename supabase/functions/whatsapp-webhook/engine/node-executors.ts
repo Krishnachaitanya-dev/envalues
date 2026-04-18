@@ -36,12 +36,32 @@ function buildLinkText(links: MessageConfig['links']): string {
     .join('\n')
 }
 
-function buildQuickReplyButtons(buttons: MessageConfig['buttons']): NonNullable<OutboundMessage['buttons']> {
+function buildChoiceOptions(buttons: MessageConfig['buttons']): NonNullable<OutboundMessage['buttons']> {
   return Array.isArray(buttons)
     ? buttons
       .filter((button) => button.id && button.title)
-      .slice(0, 3)
     : []
+}
+
+function buildQuickReplyButtons(buttons: NonNullable<OutboundMessage['buttons']>): NonNullable<OutboundMessage['buttons']> {
+  return buttons.length > 0 && buttons.length <= 3 ? buttons : []
+}
+
+function buildListMenu(
+  buttons: NonNullable<OutboundMessage['buttons']>,
+  buttonText = 'Choose option',
+): OutboundMessage['list'] | undefined {
+  if (buttons.length <= 3) return undefined
+
+  return {
+    buttonText: buttonText.trim() || 'Choose option',
+    sections: [{
+      rows: buttons.slice(0, 10).map((button) => ({
+        id: button.id,
+        title: button.title,
+      })),
+    }],
+  }
 }
 
 function normalizeOutboundMediaType(type: unknown): OutboundMediaType {
@@ -72,7 +92,9 @@ export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbou
     : config.media_url
       ? [{ type: config.media_type ?? 'document', url: config.media_url }]
       : []
-  const buttons = buildQuickReplyButtons(config.buttons)
+  const choices = buildChoiceOptions(config.buttons)
+  const buttons = buildQuickReplyButtons(choices)
+  const list = buildListMenu(choices, config.list_button_text)
   const linkText = buildLinkText(config.links)
   const textWithLinks = compactTextParts([config.text, linkText])
   const validAttachments = attachments.filter((att) => att.url)
@@ -106,7 +128,7 @@ export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbou
     let captionApplied = false
     for (const att of validAttachments) {
       const mediaType = normalizeOutboundMediaType(att.type)
-      const shouldApplyCaption = !captionApplied && buttons.length === 0
+      const shouldApplyCaption = !captionApplied && buttons.length === 0 && !list
       const caption = shouldApplyCaption
         ? compactTextParts([textWithLinks, att.caption])
         : att.caption
@@ -119,7 +141,13 @@ export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbou
     }
   }
 
-  if (textWithLinks && validAttachments.length === 0) {
+  if (list && (textWithLinks || validAttachments.length === 0)) {
+    messages.push({
+      type: 'list',
+      body: textWithLinks || 'Please choose an option.',
+      list,
+    })
+  } else if (textWithLinks && validAttachments.length === 0) {
     if (buttons.length > 0) {
       messages.push({
         type: 'interactive',

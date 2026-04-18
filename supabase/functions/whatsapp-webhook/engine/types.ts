@@ -69,8 +69,16 @@ export interface OutboundMediaHeader {
   filename?: string
 }
 
+export interface OutboundListMenu {
+  buttonText: string
+  sections: Array<{
+    title?: string
+    rows: Array<{ id: string; title: string; description?: string }>
+  }>
+}
+
 export interface OutboundMessage {
-  type: 'text' | 'image' | 'video' | 'document' | 'interactive'
+  type: 'text' | 'image' | 'video' | 'document' | 'interactive' | 'list'
   text?: string
   preview_url?: boolean
   url?: string
@@ -78,6 +86,7 @@ export interface OutboundMessage {
   body?: string
   buttons?: Array<{ id: string; title: string }>
   header?: OutboundMediaHeader
+  list?: OutboundListMenu
 }
 
 export interface NodeResult {
@@ -97,6 +106,7 @@ export interface MessageConfig {
   media_url?: string
   media_type?: 'image' | 'video' | 'document'
   buttons?: Array<{ id: string; title: string }>
+  list_button_text?: string
 }
 
 export interface InputConfig {

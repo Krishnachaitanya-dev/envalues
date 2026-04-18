@@ -1,4 +1,4 @@
-export type SimpleStepType = 'message' | 'question'
+export type SimpleStepType = 'message' | 'question' | 'end'
 export type SimpleQuestionMode = 'open_text' | 'button_choices'
 export type SimpleMediaType = 'image' | 'video' | 'document' | 'youtube'
 export type SimpleMediaSource = 'upload' | 'url'
@@ -51,7 +51,15 @@ export interface SimpleFlow {
 
 export const MAX_SIMPLE_ATTACHMENTS = 3
 export const MAX_SIMPLE_BUTTONS = 3
+export const MAX_SIMPLE_LIST_OPTIONS = 10
 export const MAX_SIMPLE_BUTTON_TITLE = 20
+
+export type SimpleQuestionResponseMode = 'open_text' | 'buttons' | 'list'
+
+export function getQuestionResponseMode(optionCount: number): SimpleQuestionResponseMode {
+  if (optionCount <= 0) return 'open_text'
+  return optionCount <= MAX_SIMPLE_BUTTONS ? 'buttons' : 'list'
+}
 
 export function isYouTubeUrl(url: string): boolean {
   if (!url) return false

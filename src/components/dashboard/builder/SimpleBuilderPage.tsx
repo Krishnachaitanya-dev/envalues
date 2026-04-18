@@ -6,6 +6,7 @@ import { useDashboard } from '@/contexts/DashboardContext'
 import { useFlowBuilder } from '@/hooks/useFlowBuilder'
 import { isSimpleCompatible } from '@/lib/simpleFlowCompat'
 import { graphToSimple, simpleToGraph } from '@/lib/simpleFlowAdapter'
+import { simpleLaunchTemplates, type SimpleLaunchTemplate } from '@/lib/simpleLaunchTemplates'
 import type { FlowNode, FlowEdge, FlowTrigger } from '@/integrations/supabase/flow-types'
 import type { SimpleFlow, SimpleStep, SimpleTrigger } from '@/types/simpleFlow'
 import { supabase } from '@/integrations/supabase/client'
@@ -26,6 +27,7 @@ export default function SimpleBuilderPage() {
   const fb = useFlowBuilder(user?.id ?? null)
 
   const [creating, setCreating] = useState(false)
+  const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null)
   const [flowMeta, setFlowMeta] = useState<Record<string, FlowMeta>>({})
   const [metaLoading, setMetaLoading] = useState(false)
 
@@ -91,6 +93,50 @@ export default function SimpleBuilderPage() {
       setCreating(false)
     }
   }, [fb.createFlow, navigate])
+
+  const handleCreateFromTemplate = useCallback(async (template: SimpleLaunchTemplate) => {
+    if (!user?.id) return
+    setCreatingTemplateId(template.id)
+    try {
+      const flow = await fb.createFlow(template.name)
+      if (!flow) return
+      const built = template.build()
+      const simple: SimpleFlow = {
+        id: flow.id,
+        name: flow.name,
+        status: 'draft',
+        steps: built.steps,
+        triggers: built.triggers,
+      }
+      const { nodes, edges, triggers } = simpleToGraph(simple, user.id, [])
+      const entryNodeId = nodes.find(node => node.node_type === 'start')?.id ?? null
+
+      if (nodes.length > 0) {
+        const nodeInsert = await (supabase.from('flow_nodes') as any).insert(nodes)
+        if (nodeInsert.error) throw new Error(nodeInsert.error.message)
+      }
+      if (entryNodeId) {
+        const entryUpdate = await (supabase.from('flows') as any).update({ entry_node_id: entryNodeId }).eq('id', flow.id)
+        if (entryUpdate.error) throw new Error(entryUpdate.error.message)
+      }
+      if (edges.length > 0) {
+        const edgeInsert = await (supabase.from('flow_edges') as any).insert(edges)
+        if (edgeInsert.error) throw new Error(edgeInsert.error.message)
+      }
+      if (triggers.length > 0) {
+        const safeTriggers = (triggers as any[]).map(({ normalized_trigger_value: _n, ...rest }) => rest)
+        const triggerInsert = await (supabase.from('flow_triggers') as any).insert(safeTriggers)
+        if (triggerInsert.error) throw new Error(triggerInsert.error.message)
+      }
+
+      toast.success('Template saved as draft')
+      navigate(`/dashboard/builder?flow=${flow.id}`)
+    } catch (err) {
+      toast.error(`Template failed: ${formatError(err)}`)
+    } finally {
+      setCreatingTemplateId(null)
+    }
+  }, [fb, navigate, user?.id])
 
   const [saveError, setSaveError] = useState<string | null>(null)
   const saveErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -160,9 +206,11 @@ export default function SimpleBuilderPage() {
         edges: (er.data ?? []) as FlowEdge[],
         triggers: (tr.data ?? []) as FlowTrigger[],
       })
+      toast.success('Draft saved')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Save failed.'
       setSaveError(msg)
+      toast.error(`Save failed: ${msg}`)
       if (saveErrorTimer.current) clearTimeout(saveErrorTimer.current)
       saveErrorTimer.current = setTimeout(() => setSaveError(null), 5000)
     } finally {
@@ -176,27 +224,27 @@ export default function SimpleBuilderPage() {
     try {
       if (simpleFlow.status === 'published') {
         await toast.promise(fb.unpublishFlow(simpleFlow.id), {
-          loading: 'Deactivating flow...',
-          success: 'Flow deactivated',
-          error: (err) => `Deactivate failed: ${formatError(err)}`,
+          loading: 'Pausing flow...',
+          success: 'Flow paused',
+          error: (err) => `Pause failed: ${formatError(err)}`,
         })
         setSimpleFlow((prev) => prev ? { ...prev, status: 'draft' } : prev)
       } else {
         const hasStep = simpleFlow.steps.length > 0
         const hasTrigger = simpleFlow.triggers.some(t => t.keywords.length > 0 && t.targetStepId)
         if (!hasStep || !hasTrigger) {
-          toast.error('Add trigger + step, then save, before activating.')
+          toast.error('Add trigger + step, then save draft, before publishing.')
           return
         }
         // Needs saved Start node (created on first save).
         if (!editorMeta?.nodes?.some((n) => n.node_type === 'start')) {
-          toast.error('Save flow once before activating.')
+          toast.error('Save draft once before publishing live.')
           return
         }
         await toast.promise(fb.publishFlow(simpleFlow.id), {
-          loading: 'Activating flow...',
-          success: 'Flow activated',
-          error: (err) => `Activate failed: ${formatError(err)}`,
+          loading: 'Publishing flow...',
+          success: 'Flow is live',
+          error: (err) => `Publish failed: ${formatError(err)}`,
         })
         setSimpleFlow((prev) => prev ? { ...prev, status: 'published' } : prev)
       }
@@ -205,16 +253,15 @@ export default function SimpleBuilderPage() {
     }
   }, [simpleFlow, fb.publishFlow, fb.unpublishFlow, editorMeta?.nodes])
 
-  const handleAddStep = useCallback((kind: 'message' | 'open_text' | 'button_choices') => {
+  const handleAddStep = useCallback((kind: 'message' | 'question' | 'end') => {
     setSimpleFlow(prev => {
       if (!prev) return prev
       const i = prev.steps.length
       const newStep: SimpleStep = {
         id: crypto.randomUUID(),
-        type: kind === 'message' ? 'message' : 'question',
-        mode: kind === 'message' ? undefined : kind,
-        text: '',
-        buttons: kind === 'button_choices' ? [{ id: crypto.randomUUID(), title: '', nextStepId: null }] : undefined,
+        type: kind,
+        mode: kind === 'question' ? 'open_text' : undefined,
+        text: kind === 'end' ? 'Thank you. Our team will contact you shortly.' : '',
         position: { x: 220 + (i % 3) * 320, y: 40 + Math.floor(i / 3) * 260 },
         _isNew: true,
       }
@@ -304,12 +351,12 @@ export default function SimpleBuilderPage() {
             <Button
               size="sm"
               variant={simpleFlow.status === 'published' ? 'outline' : 'default'}
-              className="gap-2 min-w-[92px]"
+              className="gap-2 min-w-[104px]"
               onClick={handleTogglePublish}
               disabled={publishing || saving || (simpleFlow.status !== 'published' && !canSave)}
               title={simpleFlow.status === 'published' ? 'Stop new messages from starting this flow' : 'Let this flow reply to new messages'}
             >
-              {publishing ? 'Updating...' : simpleFlow.status === 'published' ? 'Deactivate' : 'Activate'}
+              {publishing ? 'Updating...' : simpleFlow.status === 'published' ? 'Pause' : 'Publish Live'}
             </Button>
             <Button
               variant="ghost" size="sm"
@@ -328,8 +375,8 @@ export default function SimpleBuilderPage() {
               <Workflow className="h-3.5 w-3.5" />
               Advanced
             </Button>
-            <Button size="sm" onClick={handleSave} disabled={saving || !canSave} className="gap-2 min-w-[70px]">
-              {saving ? 'Saving…' : 'Save'}
+            <Button size="sm" onClick={handleSave} disabled={saving || !canSave} className="gap-2 min-w-[92px]">
+              {saving ? 'Saving...' : 'Save Draft'}
             </Button>
           </div>
         </div>
@@ -407,6 +454,33 @@ export default function SimpleBuilderPage() {
         </div>
       </div>
 
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold">Launch templates</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Start with a simple draft. Publish only when it is ready.</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {simpleLaunchTemplates.map(template => (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() => void handleCreateFromTemplate(template)}
+              disabled={Boolean(creatingTemplateId)}
+              className="rounded-lg border border-border bg-surface-raised p-3 text-left hover:bg-muted/30 transition-colors disabled:opacity-60 disabled:cursor-wait"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">{template.name}</p>
+                <span className="text-[10px] rounded-full border border-border px-1.5 py-0.5 text-muted-foreground">Draft</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">{template.description}</p>
+              <p className="text-[10px] text-primary mt-2">
+                {creatingTemplateId === template.id ? 'Creating...' : `Keywords: ${template.keywords.join(', ')}`}
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div>
         {fb.loading || metaLoading ? (
           <p className="text-muted-foreground text-sm">Loading conversations…</p>
@@ -422,7 +496,7 @@ export default function SimpleBuilderPage() {
               return compatible ? (
                 <SimpleFlowCard
                   key={flow.id} name={flow.name} status={flow.status} statusColor={sc} keywords={keywords}
-                  stepCount={(meta?.nodes ?? []).filter(n => ['message', 'input'].includes(n.node_type)).length}
+                  stepCount={(meta?.nodes ?? []).filter(n => ['message', 'input', 'end'].includes(n.node_type)).length}
                   onEdit={() => navigate(`/dashboard/builder?flow=${flow.id}`)}
                 />
               ) : (

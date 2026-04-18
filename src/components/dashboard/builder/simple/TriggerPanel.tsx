@@ -12,7 +12,7 @@ interface Props {
 
 export default function TriggerPanel({ triggers, steps, onChange }: Props) {
   const stepLabel = (s: SimpleStep, i: number) =>
-    s.text.trim().slice(0, 30) || (s.type === 'question' ? `Question ${i + 1}` : `Message ${i + 1}`)
+    s.text.trim().slice(0, 30) || (s.type === 'question' ? `Question ${i + 1}` : s.type === 'end' ? `End ${i + 1}` : `Message ${i + 1}`)
 
   const updateTrigger = (id: string, patch: Partial<SimpleTrigger>) =>
     onChange(triggers.map(t => t.id === id ? { ...t, ...patch } : t))

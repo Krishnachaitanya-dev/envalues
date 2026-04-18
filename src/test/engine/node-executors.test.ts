@@ -60,7 +60,6 @@ describe('executeMessageNode', () => {
         { id: 'btn-1', title: 'Pricing' },
         { id: 'btn-2', title: 'Demo' },
         { id: 'btn-3', title: 'Support' },
-        { id: 'btn-4', title: 'Ignored' },
       ],
     })
 
@@ -74,6 +73,36 @@ describe('executeMessageNode', () => {
         { id: 'btn-2', title: 'Demo' },
         { id: 'btn-3', title: 'Support' },
       ],
+    }])
+  })
+
+  it('returns a list message when more than three choices are configured', () => {
+    const node = makeNode('message', {
+      text: 'What are you looking for?',
+      buttons: [
+        { id: 'btn-1', title: 'Buy Flat' },
+        { id: 'btn-2', title: 'Projects' },
+        { id: 'btn-3', title: 'Site Visit' },
+        { id: 'btn-4', title: 'Price Details' },
+      ],
+    })
+
+    const result = executeMessageNode(node, makeSession(), '')
+
+    expect(result.messages).toEqual([{
+      type: 'list',
+      body: 'What are you looking for?',
+      list: {
+        buttonText: 'Choose option',
+        sections: [{
+          rows: [
+            { id: 'btn-1', title: 'Buy Flat' },
+            { id: 'btn-2', title: 'Projects' },
+            { id: 'btn-3', title: 'Site Visit' },
+            { id: 'btn-4', title: 'Price Details' },
+          ],
+        }],
+      },
     }])
   })
 

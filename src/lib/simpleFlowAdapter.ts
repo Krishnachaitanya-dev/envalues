@@ -1,6 +1,6 @@
 import type {
   FlowNode, FlowEdge, FlowTrigger,
-  MessageConfig, InputConfig,
+  MessageConfig, InputConfig, EndConfig,
 } from '@/integrations/supabase/flow-types'
 import type {
   SimpleFlow, SimpleStep, SimpleButton, SimpleMedia, SimpleTrigger,
@@ -24,6 +24,14 @@ function attachmentsFromConfig(cfg: MessageConfig): SimpleMedia[] {
         source: a.source ?? (a.storage_path ? 'upload' : 'url'),
       }
     })
+}
+
+function isVisibleSimpleNode(node: FlowNode | null | undefined): node is FlowNode {
+  if (!node) return false
+  if (node.node_type === 'message' || node.node_type === 'input') return true
+  if (node.node_type !== 'end') return false
+  const cfg = node.config as EndConfig
+  return Boolean((cfg.farewell_message ?? '').trim())
 }
 
 export function graphToSimple(
@@ -56,7 +64,7 @@ export function graphToSimple(
   function walk(nodeId: string) {
     if (visited.has(nodeId)) return
     const node = nodes.find(n => n.id === nodeId)
-    if (!node || !['message', 'input'].includes(node.node_type)) return
+    if (!node || !isVisibleSimpleNode(node)) return
     visited.add(nodeId)
 
     const outEdges = edgesBySource[nodeId] ?? []
@@ -72,7 +80,7 @@ export function graphToSimple(
         return {
           id: b.id,
           title: b.title,
-          nextStepId: nextNode && ['message', 'input'].includes(nextNode.node_type) ? nextNode.id : null,
+          nextStepId: isVisibleSimpleNode(nextNode) ? nextNode.id : null,
         }
       })
       const hasButtons = buttons.length > 0
@@ -85,7 +93,7 @@ export function graphToSimple(
         attachments: attachmentsFromConfig(cfg),
         buttons: hasButtons ? buttons : undefined,
         nextStepId: !hasButtons
-          ? (nextViaAlways && ['message', 'input'].includes(nextViaAlways.node_type) ? nextViaAlways.id : null)
+          ? (isVisibleSimpleNode(nextViaAlways) ? nextViaAlways.id : null)
           : undefined,
       }, fallbackPos)
       if (!hasButtons && alwaysEdge) walk(alwaysEdge.target_node_id)
@@ -100,9 +108,18 @@ export function graphToSimple(
         type: 'question',
         mode: 'open_text',
         text: cfg.prompt ?? '',
-        nextStepId: nextViaAlways && ['message', 'input'].includes(nextViaAlways.node_type) ? nextViaAlways.id : null,
+        nextStepId: isVisibleSimpleNode(nextViaAlways) ? nextViaAlways.id : null,
       }, fallbackPos)
       if (alwaysEdge) walk(alwaysEdge.target_node_id)
+    }
+
+    if (node.node_type === 'end') {
+      const cfg = node.config as EndConfig
+      pushStep({
+        id: node.id,
+        type: 'end',
+        text: cfg.farewell_message ?? '',
+      }, fallbackPos)
     }
   }
 
@@ -115,7 +132,7 @@ export function graphToSimple(
     if (t.target_node_id) walk(t.target_node_id)
   }
   const remaining = nodes
-    .filter(n => ['message', 'input'].includes(n.node_type) && !visited.has(n.id))
+    .filter(n => isVisibleSimpleNode(n) && !visited.has(n.id))
     .sort((a, b) => a.position_y - b.position_y)
   for (const n of remaining) walk(n.id)
 
@@ -193,10 +210,12 @@ export function simpleToGraph(
   const startId = existingNodes.find(n => n.node_type === 'start')?.id ?? crypto.randomUUID()
   nodes.push({ id: startId, flow_id: flowId, owner_id: ownerId, node_type: 'start', label: 'Start', config: {}, position_x: 0, position_y: 0 })
 
-  const endId = existingNodes.find(n => n.node_type === 'end')?.id ?? crypto.randomUUID()
+  const endId = existingNodes.find(n => n.node_type === 'end' && !isVisibleSimpleNode(n))?.id ?? crypto.randomUUID()
+  const explicitEndIds = new Set(simple.steps.filter(s => s.type === 'end').map(s => s.id))
   const needsEnd = simple.steps.some(s =>
-    s.nextStepId === null || s.nextStepId === undefined ||
+    s.type !== 'end' && (s.nextStepId === null || s.nextStepId === undefined ||
     s.buttons?.some(b => b.nextStepId === null)
+    )
   )
   if (needsEnd) {
     nodes.push({ id: endId, flow_id: flowId, owner_id: ownerId, node_type: 'end', label: 'End', config: {}, position_x: 700, position_y: 80 })
@@ -206,19 +225,28 @@ export function simpleToGraph(
     const step = simple.steps[i]
     const px = step.position?.x ?? 200
     const py = step.position?.y ?? ((i + 1) * 150)
-    if (step.mode === 'open_text') {
+    const choiceButtons = step.type === 'question' ? (step.buttons ?? []).filter(b => b.title.trim()) : []
+    if (step.type === 'end') {
+      nodes.push({
+        id: step.id, flow_id: flowId, owner_id: ownerId, node_type: 'end',
+        label: step.text.slice(0, 40) || 'End',
+        config: { farewell_message: step.text } as Record<string, unknown>,
+        position_x: px, position_y: py,
+      })
+    } else if (step.type === 'question' && choiceButtons.length === 0) {
       const varKey = `simple_answer_${step.id.replace(/-/g, '').slice(0, 12)}`
       nodes.push({
         id: step.id, flow_id: flowId, owner_id: ownerId, node_type: 'input',
         label: step.text.slice(0, 40) || 'Question',
-        config: { prompt: step.text, variable: varKey } as Record<string, unknown>,
+        config: { prompt: step.text, variable: varKey, store_as: varKey, timeout_secs: 300 } as Record<string, unknown>,
         position_x: px, position_y: py,
       })
     } else {
       const cfg: MessageConfig = {
         text: step.text || undefined,
         attachments: (step.attachments ?? []).map(attachmentToConfig),
-        buttons: step.buttons?.map(b => ({ id: b.id, title: b.title })),
+        buttons: choiceButtons.length > 0 ? choiceButtons.map(b => ({ id: b.id, title: b.title.trim() })) : undefined,
+        list_button_text: choiceButtons.length > 3 ? 'Choose option' : undefined,
       }
       nodes.push({
         id: step.id, flow_id: flowId, owner_id: ownerId, node_type: 'message',
@@ -243,10 +271,15 @@ export function simpleToGraph(
   }
 
   for (const step of simple.steps) {
-    if (step.mode === 'button_choices' && step.buttons && step.buttons.length > 0) {
-      step.buttons.forEach((btn, i) => edges.push(mkEdge(step.id, btn.nextStepId ?? endId, 'equals', btn.title, i)))
+    if (step.type === 'end') {
+      continue
+    }
+    const choiceButtons = step.type === 'question' ? (step.buttons ?? []).filter(b => b.title.trim()) : []
+    if (choiceButtons.length > 0) {
+      choiceButtons.forEach((btn, i) => edges.push(mkEdge(step.id, btn.nextStepId ?? endId, 'equals', btn.title.trim(), i)))
     } else {
-      edges.push(mkEdge(step.id, step.nextStepId ?? endId, 'always'))
+      const fallbackTarget = explicitEndIds.has(step.nextStepId ?? '') ? step.nextStepId! : (step.nextStepId ?? endId)
+      edges.push(mkEdge(step.id, fallbackTarget, 'always'))
     }
   }
 

@@ -179,7 +179,11 @@ function buildTurnDeps(
       for (const msg of messages) {
         await sendWhatsAppMessage(phone, msg, ownerCreds)
         // Log outbound bot message
-        const text = msg.type === 'text' ? (msg.text ?? '') : `[${msg.type}] ${msg.url ?? ''}`
+        const text = msg.type === 'text'
+          ? (msg.text ?? '')
+          : msg.type === 'interactive' || msg.type === 'list'
+            ? (msg.body ?? `[${msg.type}]`)
+            : `[${msg.type}] ${msg.url ?? ''}`
         await logConversation(requestId, ownerId, phone, 'outbound', text, 'bot')
       }
     },
@@ -254,6 +258,32 @@ async function sendWhatsAppMessage(to: string, msg: OutboundMessage, creds: { ac
         type: msg.header.type,
         [msg.header.type]: headerMedia,
       }
+    }
+
+    payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive,
+    }
+  } else if (msg.type === 'list') {
+    const list = msg.list
+    const rows = list?.sections.flatMap(section => section.rows) ?? []
+    const interactive: Record<string, unknown> = {
+      type: 'list',
+      body: { text: msg.body ?? 'Please choose an option.' },
+      action: {
+        button: list?.buttonText ?? 'Choose option',
+        sections: (list?.sections ?? [{ rows }]).map((section, sectionIndex) => ({
+          title: section.title ?? `Options ${sectionIndex + 1}`,
+          rows: section.rows.map(row => ({
+            id: row.id,
+            title: row.title,
+            ...(row.description ? { description: row.description } : {}),
+          })),
+        })),
+      },
     }
 
     payload = {

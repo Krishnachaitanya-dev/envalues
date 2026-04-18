@@ -5,8 +5,8 @@ import {
   type Connection, type Edge, type Node, type NodeChange, type EdgeChange, type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Plus, MessageSquare, HelpCircle, ChevronDown, Maximize2, ZoomIn, ZoomOut } from 'lucide-react'
-import type { SimpleFlow, SimpleStep, SimpleTrigger } from '@/types/simpleFlow'
+import { Plus, MessageSquare, HelpCircle, CheckCircle2, ChevronDown, Maximize2, ZoomIn, ZoomOut } from 'lucide-react'
+import type { SimpleFlow, SimpleStep } from '@/types/simpleFlow'
 import SimpleNode, { type SimpleNodeData } from './SimpleNode'
 
 type RFNode = Node<SimpleNodeData, 'simpleNode'>
@@ -18,7 +18,7 @@ interface Props {
   onSelectStep: (id: string | null) => void
   onChangeSteps: (steps: SimpleStep[]) => void
   onDeleteStep: (id: string) => void
-  onAddStep: (kind: 'message' | 'open_text' | 'button_choices') => void
+  onAddStep: (kind: 'message' | 'question' | 'end') => void
 }
 
 const nodeTypes: NodeTypes = { simpleNode: SimpleNode as unknown as NodeTypes[string] }
@@ -27,7 +27,6 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
   const { fitView, zoomIn, zoomOut } = useReactFlow()
   const [menuOpen, setMenuOpen] = useState(false)
 
-  // Step id → list of keywords for any trigger targeting it
   const triggerKeywordsByStep = useMemo(() => {
     const map: Record<string, string[]> = {}
     for (const t of flow.triggers) {
@@ -40,7 +39,6 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
     return map
   }, [flow.triggers])
 
-  // Steps → React Flow nodes (auto-layout if no position)
   const rfNodes = useMemo<RFNode[]>(() => {
     return flow.steps.map((step, i) => {
       const pos = step.position ?? { x: 220 + (i % 3) * 320, y: 40 + Math.floor(i / 3) * 260 }
@@ -58,11 +56,10 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
     })
   }, [flow.steps, triggerKeywordsByStep, selectedStepId, onDeleteStep])
 
-  // Steps → React Flow edges
   const rfEdges = useMemo<RFEdge[]>(() => {
     const edges: RFEdge[] = []
     for (const step of flow.steps) {
-      if (step.mode === 'button_choices' && step.buttons) {
+      if (step.type === 'question' && step.buttons && step.buttons.length > 0) {
         for (const btn of step.buttons) {
           if (btn.nextStepId) {
             edges.push({
@@ -79,7 +76,7 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
             })
           }
         }
-      } else if (step.mode !== 'button_choices' && step.nextStepId) {
+      } else if (step.type !== 'end' && step.nextStepId) {
         edges.push({
           id: `${step.id}:next`,
           source: step.id,
@@ -95,7 +92,6 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
   }, [flow.steps])
 
   const handleNodesChange = useCallback((changes: NodeChange<RFNode>[]) => {
-    // Track drag position changes → persist to step.position
     const next = applyNodeChanges(changes, rfNodes)
     const positionPatches: Record<string, { x: number; y: number }> = {}
     for (const n of next) {
@@ -113,7 +109,6 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
   }, [rfNodes, flow.steps, onChangeSteps])
 
   const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
-    // Handle edge deletion — detach nextStepId / button target
     const removed = changes.filter(c => c.type === 'remove').map(c => c.id)
     if (removed.length === 0) return
     const patched = flow.steps.map(step => {
@@ -134,7 +129,6 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
       return modified
     })
     onChangeSteps(patched)
-    // Also apply the visual change (no-op for position since we rebuild from steps)
     applyEdgeChanges(changes, rfEdges)
   }, [flow.steps, rfEdges, onChangeSteps])
 
@@ -142,7 +136,7 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
     if (!conn.source || !conn.target) return
     if (conn.source === conn.target) return
     const sourceStep = flow.steps.find(s => s.id === conn.source)
-    if (!sourceStep) return
+    if (!sourceStep || sourceStep.type === 'end') return
     const handle = conn.sourceHandle ?? 'out'
 
     if (handle.startsWith('btn-')) {
@@ -158,7 +152,6 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
 
   return (
     <div className="relative h-full min-h-0 w-full bg-background">
-      {/* Toolbar */}
       <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
         <div className="relative">
           <button
@@ -170,9 +163,9 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
           </button>
           {menuOpen && (
             <div className="absolute top-full left-0 mt-1 w-56 rounded-lg border border-border bg-card/95 backdrop-blur shadow-xl p-1 z-20">
-              <MenuItem icon={MessageSquare} label="Message" desc="Send text + media" onClick={() => { onAddStep('message'); setMenuOpen(false) }} />
-              <MenuItem icon={HelpCircle} label="Question · buttons" desc="Offer reply buttons" onClick={() => { onAddStep('button_choices'); setMenuOpen(false) }} />
-              <MenuItem icon={HelpCircle} label="Question · open text" desc="Wait for typed reply" onClick={() => { onAddStep('open_text'); setMenuOpen(false) }} />
+              <MenuItem icon={MessageSquare} label="Message" desc="Send text or media" onClick={() => { onAddStep('message'); setMenuOpen(false) }} />
+              <MenuItem icon={HelpCircle} label="Question" desc="Buttons, list, or typed reply" onClick={() => { onAddStep('question'); setMenuOpen(false) }} />
+              <MenuItem icon={CheckCircle2} label="End" desc="Final message and close" onClick={() => { onAddStep('end'); setMenuOpen(false) }} />
             </div>
           )}
         </div>

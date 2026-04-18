@@ -8,7 +8,13 @@ import {
 } from 'lucide-react'
 import { toast } from '@/components/ui/sonner'
 import type { SimpleStep, SimpleButton, SimpleMedia } from '@/types/simpleFlow'
-import { MAX_SIMPLE_ATTACHMENTS, MAX_SIMPLE_BUTTONS, MAX_SIMPLE_BUTTON_TITLE, isYouTubeUrl } from '@/types/simpleFlow'
+import {
+  MAX_SIMPLE_ATTACHMENTS,
+  MAX_SIMPLE_BUTTON_TITLE,
+  MAX_SIMPLE_LIST_OPTIONS,
+  getQuestionResponseMode,
+  isYouTubeUrl,
+} from '@/types/simpleFlow'
 import { uploadFlowNodeMedia, MAX_ATTACHMENT_CAPTION_LENGTH } from '@/features/flow-media/uploadFlowNodeMedia'
 
 interface Props {
@@ -28,20 +34,26 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
   const [uploadError, setUploadError] = useState<string | null>(null)
 
   const attachments = step.attachments ?? []
+  const choices = step.buttons ?? []
+  const responseMode = step.type === 'question'
+    ? getQuestionResponseMode(choices.filter(choice => choice.title.trim()).length)
+    : null
   const canAddAttachment = attachments.length < MAX_SIMPLE_ATTACHMENTS
   const targetSteps = steps.filter(s => s.id !== step.id)
 
-  const addButton = () => {
-    if ((step.buttons?.length ?? 0) >= MAX_SIMPLE_BUTTONS) return
+  const addChoice = () => {
+    if (choices.length >= MAX_SIMPLE_LIST_OPTIONS) return
     const btn: SimpleButton = { id: crypto.randomUUID(), title: '', nextStepId: null }
-    update({ buttons: [...(step.buttons ?? []), btn] })
+    update({ type: 'question', mode: 'button_choices', buttons: [...choices, btn], nextStepId: undefined })
   }
 
   const updateBtn = (i: number, patch: Partial<SimpleButton>) =>
-    update({ buttons: (step.buttons ?? []).map((b, j) => j === i ? { ...b, ...patch } : b) })
+    update({ buttons: choices.map((b, j) => j === i ? { ...b, ...patch } : b), mode: 'button_choices' })
 
-  const removeBtn = (i: number) =>
-    update({ buttons: (step.buttons ?? []).filter((_, j) => j !== i) })
+  const removeBtn = (i: number) => {
+    const next = choices.filter((_, j) => j !== i)
+    update({ buttons: next.length > 0 ? next : undefined, mode: next.length > 0 ? 'button_choices' : 'open_text' })
+  }
 
   const addAttachment = (media: SimpleMedia) => {
     if (attachments.length >= MAX_SIMPLE_ATTACHMENTS) return
@@ -97,8 +109,10 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
           {step.type === 'message' ? 'Message step'
-            : step.mode === 'button_choices' ? 'Question — button choices'
-            : 'Question — open text'}
+            : step.type === 'end' ? 'End step'
+              : responseMode === 'list' ? 'Question - list menu'
+                : responseMode === 'buttons' ? 'Question - buttons'
+                  : 'Question - open text'}
         </p>
         {onDelete && (
           <button
@@ -110,44 +124,24 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
         )}
       </div>
 
-      {step.type === 'message' && (
-        <div className="flex items-center gap-2 text-[11px]">
-          <Label className="text-xs text-muted-foreground">Question?</Label>
-          <select
-            value={step.mode ?? 'none'}
-            onChange={e => {
-              const v = e.target.value
-              if (v === 'none') update({ type: 'message', mode: undefined, buttons: undefined })
-              else if (v === 'button_choices') {
-                update({
-                  type: 'question',
-                  mode: 'button_choices',
-                  buttons: step.buttons?.length ? step.buttons : [{ id: crypto.randomUUID(), title: '', nextStepId: null }],
-                  nextStepId: undefined,
-                })
-              } else update({ type: 'question', mode: 'open_text', buttons: undefined })
-            }}
-            className="text-xs h-7 rounded-md border border-input bg-background px-2 text-foreground"
-          >
-            <option value="none">No — just a message</option>
-            <option value="open_text">Yes — wait for a typed reply</option>
-            <option value="button_choices">Yes — offer reply buttons</option>
-          </select>
-        </div>
-      )}
-
       <div className="space-y-1.5">
-        <Label className="text-xs">{step.type === 'question' ? 'Question text' : 'Message text'}</Label>
+        <Label className="text-xs">
+          {step.type === 'question' ? 'Question text' : step.type === 'end' ? 'Final message' : 'Message text'}
+        </Label>
         <Textarea
           value={step.text}
           onChange={e => update({ text: e.target.value })}
-          placeholder={step.type === 'question' ? 'What would you like to ask?' : 'Type your message…'}
+          placeholder={step.type === 'question'
+            ? 'What would you like to ask?'
+            : step.type === 'end'
+              ? 'Thank you. Our team will contact you shortly.'
+              : 'Type your message...'}
           className="text-sm resize-none min-h-[80px]"
           rows={3}
         />
       </div>
 
-      {step.type !== 'question' || step.mode !== 'open_text' ? (
+      {step.type === 'message' ? (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label className="text-xs">Attachments <span className="text-muted-foreground">(max {MAX_SIMPLE_ATTACHMENTS})</span></Label>
@@ -180,16 +174,16 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
                   onClick={() => fileRef.current?.click()}
                 >
                   {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
-                  {uploading ? 'Uploading…' : 'Upload file'}
+                  {uploading ? 'Uploading...' : 'Upload file'}
                 </Button>
-                <span className="text-[10px] text-muted-foreground self-center">JPG · PNG · MP4 · PDF</span>
+                <span className="text-[10px] text-muted-foreground self-center">JPG / PNG / MP4 / PDF</span>
               </div>
               <div className="flex gap-1.5">
                 <Input
                   value={urlDraft}
                   onChange={e => setUrlDraft(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddUrl() } }}
-                  placeholder="Paste URL (image, video, YouTube, PDF)…"
+                  placeholder="Paste URL (image, video, YouTube, PDF)..."
                   className="text-xs h-7 flex-1"
                 />
                 <Button type="button" size="sm" variant="outline" className="text-xs h-7 gap-1" onClick={handleAddUrl} disabled={!urlDraft.trim()}>
@@ -205,16 +199,21 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
         </div>
       ) : null}
 
-      {step.mode === 'button_choices' && (
+      {step.type === 'question' && (
         <div className="space-y-2">
-          <Label className="text-xs">Reply buttons <span className="text-muted-foreground">(max {MAX_SIMPLE_BUTTONS})</span></Label>
-          {(step.buttons ?? []).map((btn, i) => (
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs">Choices <span className="text-muted-foreground">(optional)</span></Label>
+            <span className="text-[10px] text-muted-foreground">
+              {responseMode === 'list' ? 'Sends as list menu' : responseMode === 'buttons' ? 'Sends as buttons' : 'No choices = typed reply'}
+            </span>
+          </div>
+          {choices.map((btn, i) => (
             <div key={btn.id} className="space-y-1.5">
               <div className="flex gap-2 items-start">
                 <Input
                   value={btn.title}
                   onChange={e => updateBtn(i, { title: e.target.value.slice(0, MAX_SIMPLE_BUTTON_TITLE) })}
-                  placeholder={`Button ${i + 1} label (${MAX_SIMPLE_BUTTON_TITLE} chars max)`}
+                  placeholder={`Option ${i + 1} label (${MAX_SIMPLE_BUTTON_TITLE} chars max)`}
                   className="text-xs h-8 flex-1"
                 />
                 <button onClick={() => removeBtn(i)} className="mt-1 p-1 text-muted-foreground hover:text-destructive">
@@ -222,7 +221,7 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
                 </button>
               </div>
               <div className="flex items-center gap-2 pl-1">
-                <Label className="text-[10px] text-muted-foreground w-16 shrink-0">After click</Label>
+                <Label className="text-[10px] text-muted-foreground w-16 shrink-0">After pick</Label>
                 <select
                   value={btn.nextStepId ?? ''}
                   onChange={e => updateBtn(i, { nextStepId: e.target.value || null })}
@@ -231,27 +230,32 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
                   <option value="">End conversation</option>
                   {targetSteps.map(target => (
                     <option key={target.id} value={target.id}>
-                      {(target.text.trim() || (target.type === 'question' ? 'Untitled question' : 'Untitled message')).slice(0, 70)}
+                      {(target.text.trim() || (target.type === 'question' ? 'Untitled question' : target.type === 'end' ? 'End' : 'Untitled message')).slice(0, 70)}
                     </option>
                   ))}
                 </select>
               </div>
             </div>
           ))}
-          {(step.buttons?.length ?? 0) < MAX_SIMPLE_BUTTONS && (
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs w-full" onClick={addButton}>
-              <Plus className="h-3.5 w-3.5" /> Add button
+          {choices.length < MAX_SIMPLE_LIST_OPTIONS && (
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs w-full" onClick={addChoice}>
+              <Plus className="h-3.5 w-3.5" /> Add option
             </Button>
           )}
           <p className="text-[10px] text-muted-foreground">
-            Connect each button's output to the next step on the canvas.
+            Add no choices for open text. Add 1-3 choices for WhatsApp buttons. Add 4+ choices for a WhatsApp list menu.
           </p>
         </div>
       )}
 
-      {step.mode !== 'button_choices' && (
+      {step.type !== 'question' && step.type !== 'end' && (
         <p className="text-[10px] text-muted-foreground">
           Drag from this step's handle on the canvas to connect it to the next step.
+        </p>
+      )}
+      {step.type === 'end' && (
+        <p className="text-[10px] text-muted-foreground">
+          This step sends the final message and closes the conversation.
         </p>
       )}
     </div>
@@ -265,8 +269,8 @@ function AttachmentRow({ media, onCaptionChange, onRemove }: {
 }) {
   const Icon = media.type === 'image' ? ImageIcon
     : media.type === 'video' ? Film
-    : media.type === 'youtube' ? Youtube
-    : FileText
+      : media.type === 'youtube' ? Youtube
+        : FileText
   return (
     <div className="flex gap-2 p-2 rounded-md border border-border bg-background/40">
       <div className="shrink-0 h-16 w-16 rounded-md bg-muted flex items-center justify-center overflow-hidden">
@@ -279,7 +283,7 @@ function AttachmentRow({ media, onCaptionChange, onRemove }: {
         <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
           <Icon className="h-3 w-3" />
           <span className="capitalize">{media.type}</span>
-          <span>·</span>
+          <span>/</span>
           <span className="truncate">{media.url.replace(/^https?:\/\//, '').slice(0, 40)}</span>
         </div>
         <Input
