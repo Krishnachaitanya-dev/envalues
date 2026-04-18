@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
-import { Plus, Zap, ArrowRight, Workflow, Lock, ExternalLink, MessageSquare, Eye, EyeOff, Trash2, Copy } from 'lucide-react'
+import { Plus, Zap, ArrowRight, Workflow, Lock, ExternalLink, MessageSquare, Eye, EyeOff, Trash2, Copy, Share2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useFlowBuilder } from '@/hooks/useFlowBuilder'
 import { isSimpleCompatible } from '@/lib/simpleFlowCompat'
 import { graphToSimple, simpleToGraph } from '@/lib/simpleFlowAdapter'
-import { cloneSimpleFlowCopy, createSimpleFlowCopyText, parseSimpleFlowCopyText } from '@/lib/simpleFlowCopy'
+import {
+  FLOW_COPY_QUERY_PARAM,
+  FLOW_COPY_STORAGE_KEY,
+  appendSimpleFlowCopy,
+  cloneSimpleFlowCopy,
+  createSimpleFlowCopyText,
+  createSimpleFlowShareUrl,
+  parseSimpleFlowCopyText,
+  parseSimpleFlowCopyToken,
+} from '@/lib/simpleFlowCopy'
 import { simpleLaunchTemplates, type SimpleLaunchTemplate } from '@/lib/simpleLaunchTemplates'
 import type { FlowNode, FlowEdge, FlowTrigger } from '@/integrations/supabase/flow-types'
 import type { SimpleFlow, SimpleStep, SimpleTrigger } from '@/types/simpleFlow'
@@ -50,7 +59,7 @@ async function readFlowCopyText(): Promise<string | null> {
   } catch {
     // Browser may block clipboard read; fall back to manual paste.
   }
-  return window.prompt('Paste copied flow JSON here:')
+  return window.prompt('Paste copied flow JSON or share link here:')
 }
 
 export default function SimpleBuilderPage() {
@@ -63,6 +72,7 @@ export default function SimpleBuilderPage() {
   const [creating, setCreating] = useState(false)
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null)
   const [importingCopy, setImportingCopy] = useState(false)
+  const [handledShareToken, setHandledShareToken] = useState<string | null>(null)
   const [flowActionId, setFlowActionId] = useState<string | null>(null)
   const [flowMeta, setFlowMeta] = useState<Record<string, FlowMeta>>({})
   const [metaLoading, setMetaLoading] = useState(false)
@@ -73,6 +83,7 @@ export default function SimpleBuilderPage() {
   const [saving, setSaving] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(true)
   const [publishing, setPublishing] = useState(false)
+  const shareToken = searchParams.get(FLOW_COPY_QUERY_PARAM)
 
   // ── Flow list meta fetch ──
   useEffect(() => {
@@ -155,17 +166,24 @@ export default function SimpleBuilderPage() {
     }
   }, [fb, navigate, user?.id])
 
+  const createDraftFromCopy = useCallback(async (copyText: string) => {
+    if (!user?.id) return null
+    const copy = parseSimpleFlowCopyText(copyText)
+    const flow = await fb.createFlow(`${copy.name} Copy`)
+    if (!flow) throw new Error('Could not create imported flow.')
+    const simple = cloneSimpleFlowCopy(copy, flow.id, flow.name)
+    await persistSimpleDraft(simple, user.id)
+    return flow
+  }, [fb, user?.id])
+
   const handleImportFlowCopy = useCallback(async () => {
     if (!user?.id) return
     setImportingCopy(true)
     try {
       const text = await readFlowCopyText()
       if (!text?.trim()) return
-      const copy = parseSimpleFlowCopyText(text)
-      const flow = await fb.createFlow(`${copy.name} Copy`)
-      if (!flow) throw new Error('Could not create imported flow.')
-      const simple = cloneSimpleFlowCopy(copy, flow.id, flow.name)
-      await persistSimpleDraft(simple, user.id)
+      const flow = await createDraftFromCopy(text)
+      if (!flow) return
       toast.success('Flow imported as inactive draft')
       navigate(`/dashboard/builder?flow=${flow.id}`)
     } catch (err) {
@@ -173,7 +191,32 @@ export default function SimpleBuilderPage() {
     } finally {
       setImportingCopy(false)
     }
-  }, [fb, navigate, user?.id])
+  }, [createDraftFromCopy, navigate, user?.id])
+
+  useEffect(() => {
+    if (!shareToken || !user?.id || handledShareToken === shareToken) return
+    setHandledShareToken(shareToken)
+    const confirmed = window.confirm('Import shared flow as inactive draft?')
+    if (!confirmed) {
+      navigate('/dashboard/builder', { replace: true })
+      return
+    }
+    setImportingCopy(true)
+    ;(async () => {
+      try {
+        const copy = parseSimpleFlowCopyToken(shareToken)
+        const flow = await createDraftFromCopy(JSON.stringify({ flow: copy }))
+        if (!flow) return
+        toast.success('Shared flow imported as inactive draft')
+        navigate(`/dashboard/builder?flow=${flow.id}`, { replace: true })
+      } catch (err) {
+        toast.error(`Shared import failed: ${formatError(err)}`)
+        navigate('/dashboard/builder', { replace: true })
+      } finally {
+        setImportingCopy(false)
+      }
+    })()
+  }, [createDraftFromCopy, handledShareToken, navigate, shareToken, user?.id])
 
   const handleCopyFlow = useCallback(async (flowId: string) => {
     const flow = fb.flows.find(item => item.id === flowId)
@@ -184,12 +227,64 @@ export default function SimpleBuilderPage() {
     }
     try {
       const simple = graphToSimple(flow, meta.nodes, meta.edges, meta.triggers)
-      await navigator.clipboard.writeText(createSimpleFlowCopyText(simple))
-      toast.success('Flow copy ready. Paste it into another account with Import copy.')
+      const copyText = createSimpleFlowCopyText(simple)
+      window.localStorage.setItem(FLOW_COPY_STORAGE_KEY, copyText)
+      try {
+        await navigator.clipboard.writeText(copyText)
+      } catch {
+        // Local copy still works for same-account merge.
+      }
+      toast.success('Flow copied. Open another flow and use Add copied flow.')
     } catch (err) {
       toast.error(`Copy failed: ${formatError(err)}`)
     }
   }, [fb.flows, flowMeta])
+
+  const handleShareFlow = useCallback(async (flowId: string) => {
+    const flow = fb.flows.find(item => item.id === flowId)
+    const meta = flowMeta[flowId]
+    if (!flow || !meta) {
+      toast.error('Flow details still loading. Try again.')
+      return
+    }
+    try {
+      const simple = graphToSimple(flow, meta.nodes, meta.edges, meta.triggers)
+      const shareUrl = createSimpleFlowShareUrl(simple, window.location.origin)
+      if (navigator.share) {
+        await navigator.share({
+          title: `${flow.name} flow`,
+          text: 'Import this WhatsApp flow as an inactive draft.',
+          url: shareUrl,
+        })
+        toast.success('Share sheet opened')
+      } else {
+        await navigator.clipboard.writeText(shareUrl)
+        toast.success('Share link copied')
+      }
+    } catch (err) {
+      toast.error(`Share failed: ${formatError(err)}`)
+    }
+  }, [fb.flows, flowMeta])
+
+  const handleAppendCopiedFlow = useCallback(async () => {
+    if (!simpleFlow) return
+    if (simpleFlow.status === 'published') {
+      toast.error('Pause flow before adding copied flow.')
+      return
+    }
+    try {
+      let copyText = window.localStorage.getItem(FLOW_COPY_STORAGE_KEY)
+      if (!copyText?.trim()) {
+        copyText = await readFlowCopyText()
+      }
+      if (!copyText?.trim()) return
+      const copy = parseSimpleFlowCopyText(copyText)
+      setSimpleFlow(prev => prev ? appendSimpleFlowCopy(prev, copy) : prev)
+      toast.success('Copied flow added to this canvas. Save draft when ready.')
+    } catch (err) {
+      toast.error(`Add copied flow failed: ${formatError(err)}`)
+    }
+  }, [simpleFlow])
 
   const handleDeleteFlowFromList = useCallback(async (flowId: string, flowName: string) => {
     const confirmed = window.confirm(`Delete "${flowName}"? This cannot be undone.`)
@@ -492,6 +587,16 @@ export default function SimpleBuilderPage() {
               <Workflow className="h-3.5 w-3.5" />
               Advanced
             </Button>
+            <Button
+              variant="ghost" size="sm"
+              className="text-xs text-muted-foreground gap-1.5"
+              onClick={() => void handleAppendCopiedFlow()}
+              title="Add the copied flow into this canvas with its own triggers."
+              disabled={simpleFlow.status === 'published'}
+            >
+              <Copy className="h-3.5 w-3.5" />
+              Add copied flow
+            </Button>
             <Button size="sm" onClick={handleSave} disabled={saving || !canSave} className="gap-2 min-w-[92px]">
               {saving ? 'Saving...' : 'Save Draft'}
             </Button>
@@ -591,6 +696,7 @@ export default function SimpleBuilderPage() {
         stepCount={(meta?.nodes ?? []).filter(n => ['message', 'input', 'end'].includes(n.node_type)).length}
         onEdit={() => navigate(`/dashboard/builder?flow=${flow.id}`)}
         onCopy={() => void handleCopyFlow(flow.id)}
+        onShare={() => void handleShareFlow(flow.id)}
       />
     )
   }
@@ -717,7 +823,7 @@ function ManagedStatusBadge({ status, statusColor }: { status: string; statusCol
   )
 }
 
-function ManagedActionsRow({ status, busy, onEdit, onCopy, onPublish, onPause, onDelete }: FlowCardActions & { onEdit?: () => void; onCopy?: () => void }) {
+function ManagedActionsRow({ status, busy, onEdit, onCopy, onShare, onPublish, onPause, onDelete }: FlowCardActions & { onEdit?: () => void; onCopy?: () => void; onShare?: () => void }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 shrink-0">
       {onEdit && (
@@ -728,6 +834,11 @@ function ManagedActionsRow({ status, busy, onEdit, onCopy, onPublish, onPause, o
       {onCopy && (
         <Button variant="outline" size="sm" className="h-8 px-2 text-xs gap-1.5" onClick={onCopy} disabled={busy}>
           <Copy className="h-3.5 w-3.5" /> Copy
+        </Button>
+      )}
+      {onShare && (
+        <Button variant="outline" size="sm" className="h-8 px-2 text-xs gap-1.5" onClick={onShare} disabled={busy}>
+          <Share2 className="h-3.5 w-3.5" /> Share
         </Button>
       )}
       {status === 'published' ? (
@@ -754,12 +865,13 @@ function ManagedSimpleFlowCard({
   stepCount,
   onEdit,
   onCopy,
+  onShare,
   compact = false,
   busy = false,
   onPublish,
   onPause,
   onDelete,
-}: FlowCardActions & { keywords: string[]; stepCount: number; onEdit: () => void; onCopy: () => void }) {
+}: FlowCardActions & { keywords: string[]; stepCount: number; onEdit: () => void; onCopy: () => void; onShare: () => void }) {
   return (
     <div className={`flex ${compact ? 'flex-col gap-3 p-3' : 'items-center justify-between gap-3 p-4'} rounded-lg border border-border bg-surface-raised transition-colors`}>
       <div className="flex items-start gap-3 min-w-0">
@@ -781,6 +893,7 @@ function ManagedSimpleFlowCard({
         busy={busy}
         onEdit={onEdit}
         onCopy={onCopy}
+        onShare={onShare}
         onPublish={onPublish}
         onPause={onPause}
         onDelete={onDelete}

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { cloneSimpleFlowCopy, createSimpleFlowCopyText, parseSimpleFlowCopyText } from '@/lib/simpleFlowCopy'
+import {
+  appendSimpleFlowCopy,
+  cloneSimpleFlowCopy,
+  createSimpleFlowCopyText,
+  createSimpleFlowShareUrl,
+  parseSimpleFlowCopyText,
+} from '@/lib/simpleFlowCopy'
 import type { SimpleFlow } from '@/types/simpleFlow'
 
 function sampleFlow(): SimpleFlow {
@@ -81,5 +87,42 @@ describe('simple flow copy', () => {
     expect(cloned.triggers[0].targetStepId).toBe(welcome.id)
     expect(capture.attachments?.[0].id).not.toBe('logo')
     expect(capture.attachments?.[0].url).toBe('https://example.com/logo.png')
+  })
+
+  it('creates share URLs that can be parsed back on another device', () => {
+    const shareUrl = createSimpleFlowShareUrl(sampleFlow(), 'https://app.example.com/dashboard/builder')
+    const parsed = parseSimpleFlowCopyText(shareUrl)
+
+    expect(shareUrl).toContain('/dashboard/builder?flow_copy=')
+    expect(parsed.name).toBe('Salon Booking')
+    expect(parsed.steps).toHaveLength(3)
+  })
+
+  it('appends a copied flow into an existing canvas with copied triggers', () => {
+    const target: SimpleFlow = {
+      id: 'target-flow',
+      name: 'Main Flow',
+      status: 'draft',
+      steps: [
+        {
+          id: 'main-step',
+          type: 'message',
+          text: 'Main welcome',
+          position: { x: 100, y: 80 },
+        },
+      ],
+      triggers: [
+        { id: 'main-trigger', keywords: ['main'], targetStepId: 'main-step' },
+      ],
+    }
+    const copied = parseSimpleFlowCopyText(createSimpleFlowCopyText(sampleFlow()))
+    const merged = appendSimpleFlowCopy(target, copied)
+
+    expect(merged.id).toBe('target-flow')
+    expect(merged.steps).toHaveLength(4)
+    expect(merged.triggers).toHaveLength(2)
+    expect(merged.triggers[1].keywords).toEqual(['hi', 'booking'])
+    expect(merged.triggers[1].targetStepId).not.toBe('welcome')
+    expect(merged.steps.slice(1).every(step => (step.position?.x ?? 0) > 100)).toBe(true)
   })
 })

@@ -2,6 +2,8 @@ import type { SimpleButton, SimpleFlow, SimpleMedia, SimpleStep, SimpleTrigger }
 
 const COPY_KIND = 'envalues.simple-flow'
 const COPY_VERSION = 1
+export const FLOW_COPY_QUERY_PARAM = 'flow_copy'
+export const FLOW_COPY_STORAGE_KEY = 'envalues.simple-flow-copy'
 
 export interface SimpleFlowCopyData {
   name: string
@@ -49,12 +51,49 @@ export function createSimpleFlowCopyText(flow: SimpleFlow): string {
   return JSON.stringify(payload, null, 2)
 }
 
+export function encodeSimpleFlowCopyText(text: string): string {
+  const bytes = new TextEncoder().encode(text)
+  let binary = ''
+  bytes.forEach(byte => { binary += String.fromCharCode(byte) })
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+export function decodeSimpleFlowCopyText(token: string): string {
+  const base64 = token.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+  const binary = atob(padded)
+  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
+}
+
+export function createSimpleFlowShareUrl(flow: SimpleFlow, baseHref: string): string {
+  const url = new URL(baseHref)
+  url.pathname = '/dashboard/builder'
+  url.search = ''
+  url.hash = ''
+  url.searchParams.set(FLOW_COPY_QUERY_PARAM, encodeSimpleFlowCopyText(createSimpleFlowCopyText(flow)))
+  return url.toString()
+}
+
+export function parseSimpleFlowCopyToken(token: string): SimpleFlowCopyData {
+  return parseSimpleFlowCopyText(decodeSimpleFlowCopyText(token))
+}
+
 export function parseSimpleFlowCopyText(text: string): SimpleFlowCopyData {
+  const trimmed = text.trim()
+  try {
+    const url = new URL(trimmed)
+    const token = url.searchParams.get(FLOW_COPY_QUERY_PARAM)
+    if (token) return parseSimpleFlowCopyToken(token)
+  } catch {
+    // Not a URL; parse as raw copy JSON.
+  }
+
   let parsed: unknown
   try {
-    parsed = JSON.parse(text)
+    parsed = JSON.parse(trimmed)
   } catch {
-    throw new Error('Paste a valid flow copy JSON.')
+    throw new Error('Paste a valid flow copy JSON or share link.')
   }
   return asCopyData(parsed)
 }
@@ -122,5 +161,30 @@ export function cloneSimpleFlowCopy(copy: SimpleFlowCopyData, flowId: string, fl
     status: 'draft',
     steps,
     triggers,
+  }
+}
+
+export function appendSimpleFlowCopy(target: SimpleFlow, copy: SimpleFlowCopyData): SimpleFlow {
+  const cloned = cloneSimpleFlowCopy(copy, target.id, target.name)
+  const existingMaxX = target.steps.reduce((max, step) => Math.max(max, step.position?.x ?? 0), 0)
+  const importedMinX = cloned.steps.reduce((min, step) => Math.min(min, step.position?.x ?? 200), Number.POSITIVE_INFINITY)
+  const shiftX = target.steps.length > 0 ? existingMaxX + 280 - importedMinX : 0
+
+  return {
+    ...target,
+    steps: [
+      ...target.steps,
+      ...cloned.steps.map(step => ({
+        ...step,
+        position: {
+          x: (step.position?.x ?? 200) + shiftX,
+          y: step.position?.y ?? 200,
+        },
+      })),
+    ],
+    triggers: [
+      ...target.triggers,
+      ...cloned.triggers,
+    ],
   }
 }
