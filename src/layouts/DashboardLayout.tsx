@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { Loader2 } from 'lucide-react'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
@@ -107,7 +107,15 @@ function DashboardShell() {
       <SidebarProvider
         defaultOpen={false}
         className="flex h-full min-h-0 w-full overflow-hidden"
-        style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, maxHeight: '100%' }}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          minHeight: 0,
+          maxHeight: '100%',
+          '--sidebar-top': '52px',
+          '--sidebar-height': 'calc(100svh - 52px)',
+        } as CSSProperties}
       >
         <TopBar />
         <div data-dashboard-body className="flex-1 min-h-0 flex w-full min-w-0 overflow-hidden">
