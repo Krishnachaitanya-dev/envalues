@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
-import { Plus, Zap, ArrowRight, Workflow, Lock, ExternalLink, MessageSquare, Eye, EyeOff, Trash2 } from 'lucide-react'
+import { Plus, Zap, ArrowRight, Workflow, Lock, ExternalLink, MessageSquare, Eye, EyeOff, Trash2, Copy } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useFlowBuilder } from '@/hooks/useFlowBuilder'
 import { isSimpleCompatible } from '@/lib/simpleFlowCompat'
 import { graphToSimple, simpleToGraph } from '@/lib/simpleFlowAdapter'
+import { cloneSimpleFlowCopy, createSimpleFlowCopyText, parseSimpleFlowCopyText } from '@/lib/simpleFlowCopy'
 import { simpleLaunchTemplates, type SimpleLaunchTemplate } from '@/lib/simpleLaunchTemplates'
 import type { FlowNode, FlowEdge, FlowTrigger } from '@/integrations/supabase/flow-types'
 import type { SimpleFlow, SimpleStep, SimpleTrigger } from '@/types/simpleFlow'
@@ -19,6 +20,39 @@ import SimpleCanvas from './simple/SimpleCanvas'
 
 interface FlowMeta { nodes: FlowNode[]; edges: FlowEdge[]; triggers: FlowTrigger[] }
 
+async function persistSimpleDraft(simple: SimpleFlow, ownerId: string): Promise<void> {
+  const { nodes, edges, triggers } = simpleToGraph(simple, ownerId, [])
+  const entryNodeId = nodes.find(node => node.node_type === 'start')?.id ?? null
+
+  if (nodes.length > 0) {
+    const nodeInsert = await (supabase.from('flow_nodes') as any).insert(nodes)
+    if (nodeInsert.error) throw new Error(nodeInsert.error.message)
+  }
+  if (entryNodeId) {
+    const entryUpdate = await (supabase.from('flows') as any).update({ entry_node_id: entryNodeId }).eq('id', simple.id)
+    if (entryUpdate.error) throw new Error(entryUpdate.error.message)
+  }
+  if (edges.length > 0) {
+    const edgeInsert = await (supabase.from('flow_edges') as any).insert(edges)
+    if (edgeInsert.error) throw new Error(edgeInsert.error.message)
+  }
+  if (triggers.length > 0) {
+    const safeTriggers = (triggers as any[]).map(({ normalized_trigger_value: _n, ...rest }) => rest)
+    const triggerInsert = await (supabase.from('flow_triggers') as any).insert(safeTriggers)
+    if (triggerInsert.error) throw new Error(triggerInsert.error.message)
+  }
+}
+
+async function readFlowCopyText(): Promise<string | null> {
+  try {
+    const clipboardText = await navigator.clipboard?.readText()
+    if (clipboardText?.trim()) return clipboardText
+  } catch {
+    // Browser may block clipboard read; fall back to manual paste.
+  }
+  return window.prompt('Paste copied flow JSON here:')
+}
+
 export default function SimpleBuilderPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -28,6 +62,7 @@ export default function SimpleBuilderPage() {
 
   const [creating, setCreating] = useState(false)
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null)
+  const [importingCopy, setImportingCopy] = useState(false)
   const [flowActionId, setFlowActionId] = useState<string | null>(null)
   const [flowMeta, setFlowMeta] = useState<Record<string, FlowMeta>>({})
   const [metaLoading, setMetaLoading] = useState(false)
@@ -109,26 +144,7 @@ export default function SimpleBuilderPage() {
         steps: built.steps,
         triggers: built.triggers,
       }
-      const { nodes, edges, triggers } = simpleToGraph(simple, user.id, [])
-      const entryNodeId = nodes.find(node => node.node_type === 'start')?.id ?? null
-
-      if (nodes.length > 0) {
-        const nodeInsert = await (supabase.from('flow_nodes') as any).insert(nodes)
-        if (nodeInsert.error) throw new Error(nodeInsert.error.message)
-      }
-      if (entryNodeId) {
-        const entryUpdate = await (supabase.from('flows') as any).update({ entry_node_id: entryNodeId }).eq('id', flow.id)
-        if (entryUpdate.error) throw new Error(entryUpdate.error.message)
-      }
-      if (edges.length > 0) {
-        const edgeInsert = await (supabase.from('flow_edges') as any).insert(edges)
-        if (edgeInsert.error) throw new Error(edgeInsert.error.message)
-      }
-      if (triggers.length > 0) {
-        const safeTriggers = (triggers as any[]).map(({ normalized_trigger_value: _n, ...rest }) => rest)
-        const triggerInsert = await (supabase.from('flow_triggers') as any).insert(safeTriggers)
-        if (triggerInsert.error) throw new Error(triggerInsert.error.message)
-      }
+      await persistSimpleDraft(simple, user.id)
 
       toast.success('Starter canvas saved as draft')
       navigate(`/dashboard/builder?flow=${flow.id}`)
@@ -138,6 +154,42 @@ export default function SimpleBuilderPage() {
       setCreatingTemplateId(null)
     }
   }, [fb, navigate, user?.id])
+
+  const handleImportFlowCopy = useCallback(async () => {
+    if (!user?.id) return
+    setImportingCopy(true)
+    try {
+      const text = await readFlowCopyText()
+      if (!text?.trim()) return
+      const copy = parseSimpleFlowCopyText(text)
+      const flow = await fb.createFlow(`${copy.name} Copy`)
+      if (!flow) throw new Error('Could not create imported flow.')
+      const simple = cloneSimpleFlowCopy(copy, flow.id, flow.name)
+      await persistSimpleDraft(simple, user.id)
+      toast.success('Flow imported as inactive draft')
+      navigate(`/dashboard/builder?flow=${flow.id}`)
+    } catch (err) {
+      toast.error(`Import failed: ${formatError(err)}`)
+    } finally {
+      setImportingCopy(false)
+    }
+  }, [fb, navigate, user?.id])
+
+  const handleCopyFlow = useCallback(async (flowId: string) => {
+    const flow = fb.flows.find(item => item.id === flowId)
+    const meta = flowMeta[flowId]
+    if (!flow || !meta) {
+      toast.error('Flow details still loading. Try again.')
+      return
+    }
+    try {
+      const simple = graphToSimple(flow, meta.nodes, meta.edges, meta.triggers)
+      await navigator.clipboard.writeText(createSimpleFlowCopyText(simple))
+      toast.success('Flow copy ready. Paste it into another account with Import copy.')
+    } catch (err) {
+      toast.error(`Copy failed: ${formatError(err)}`)
+    }
+  }, [fb.flows, flowMeta])
 
   const handleDeleteFlowFromList = useCallback(async (flowId: string, flowName: string) => {
     const confirmed = window.confirm(`Delete "${flowName}"? This cannot be undone.`)
@@ -538,6 +590,7 @@ export default function SimpleBuilderPage() {
         keywords={keywords}
         stepCount={(meta?.nodes ?? []).filter(n => ['message', 'input', 'end'].includes(n.node_type)).length}
         onEdit={() => navigate(`/dashboard/builder?flow=${flow.id}`)}
+        onCopy={() => void handleCopyFlow(flow.id)}
       />
     )
   }
@@ -568,6 +621,17 @@ export default function SimpleBuilderPage() {
               {creatingTemplateId ? 'Creating...' : 'Use starter canvas'}
             </Button>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => void handleImportFlowCopy()}
+            disabled={importingCopy || fb.loading}
+            title="Paste a flow copied from another account."
+          >
+            <Copy className="h-4 w-4" />
+            {importingCopy ? 'Importing...' : 'Import copy'}
+          </Button>
           <Button size="sm" className="gap-2" onClick={handleCreateFlow} disabled={creating || fb.loading}>
             <Plus className="h-4 w-4" />
             New blank
@@ -653,12 +717,17 @@ function ManagedStatusBadge({ status, statusColor }: { status: string; statusCol
   )
 }
 
-function ManagedActionsRow({ status, busy, onEdit, onPublish, onPause, onDelete }: FlowCardActions & { onEdit?: () => void }) {
+function ManagedActionsRow({ status, busy, onEdit, onCopy, onPublish, onPause, onDelete }: FlowCardActions & { onEdit?: () => void; onCopy?: () => void }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 shrink-0">
       {onEdit && (
         <Button variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={onEdit} disabled={busy}>
           Edit
+        </Button>
+      )}
+      {onCopy && (
+        <Button variant="outline" size="sm" className="h-8 px-2 text-xs gap-1.5" onClick={onCopy} disabled={busy}>
+          <Copy className="h-3.5 w-3.5" /> Copy
         </Button>
       )}
       {status === 'published' ? (
@@ -684,12 +753,13 @@ function ManagedSimpleFlowCard({
   keywords,
   stepCount,
   onEdit,
+  onCopy,
   compact = false,
   busy = false,
   onPublish,
   onPause,
   onDelete,
-}: FlowCardActions & { keywords: string[]; stepCount: number; onEdit: () => void }) {
+}: FlowCardActions & { keywords: string[]; stepCount: number; onEdit: () => void; onCopy: () => void }) {
   return (
     <div className={`flex ${compact ? 'flex-col gap-3 p-3' : 'items-center justify-between gap-3 p-4'} rounded-lg border border-border bg-surface-raised transition-colors`}>
       <div className="flex items-start gap-3 min-w-0">
@@ -710,6 +780,7 @@ function ManagedSimpleFlowCard({
         statusColor={statusColor}
         busy={busy}
         onEdit={onEdit}
+        onCopy={onCopy}
         onPublish={onPublish}
         onPause={onPause}
         onDelete={onDelete}
