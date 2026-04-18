@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
-import { Plus, Zap, ArrowRight, Workflow, Lock, ExternalLink, MessageSquare, Eye, EyeOff } from 'lucide-react'
+import { Plus, Zap, ArrowRight, Workflow, Lock, ExternalLink, MessageSquare, Eye, EyeOff, Trash2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { useDashboard } from '@/contexts/DashboardContext'
@@ -28,6 +28,7 @@ export default function SimpleBuilderPage() {
 
   const [creating, setCreating] = useState(false)
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null)
+  const [flowActionId, setFlowActionId] = useState<string | null>(null)
   const [flowMeta, setFlowMeta] = useState<Record<string, FlowMeta>>({})
   const [metaLoading, setMetaLoading] = useState(false)
 
@@ -129,14 +130,72 @@ export default function SimpleBuilderPage() {
         if (triggerInsert.error) throw new Error(triggerInsert.error.message)
       }
 
-      toast.success('Template saved as draft')
+      toast.success('Starter canvas saved as draft')
       navigate(`/dashboard/builder?flow=${flow.id}`)
     } catch (err) {
-      toast.error(`Template failed: ${formatError(err)}`)
+      toast.error(`Starter failed: ${formatError(err)}`)
     } finally {
       setCreatingTemplateId(null)
     }
   }, [fb, navigate, user?.id])
+
+  const handleDeleteFlowFromList = useCallback(async (flowId: string, flowName: string) => {
+    const confirmed = window.confirm(`Delete "${flowName}"? This cannot be undone.`)
+    if (!confirmed) return
+    setFlowActionId(flowId)
+    try {
+      const action = fb.deleteFlow(flowId)
+      toast.promise(action, {
+        loading: 'Deleting flow...',
+        success: 'Flow deleted',
+        error: (err) => `Delete failed: ${formatError(err)}`,
+      })
+      await action
+      setFlowMeta(prev => {
+        const next = { ...prev }
+        delete next[flowId]
+        return next
+      })
+    } catch {
+      // toast.promise already surfaces the error to the user.
+    } finally {
+      setFlowActionId(null)
+    }
+  }, [fb.deleteFlow])
+
+  const handlePublishFlowFromList = useCallback(async (flowId: string) => {
+    setFlowActionId(flowId)
+    try {
+      const action = fb.publishFlow(flowId)
+      toast.promise(action, {
+        loading: 'Publishing flow...',
+        success: 'Flow is live',
+        error: (err) => `Publish failed: ${formatError(err)}`,
+      })
+      await action
+    } catch {
+      // toast.promise already surfaces the error to the user.
+    } finally {
+      setFlowActionId(null)
+    }
+  }, [fb.publishFlow])
+
+  const handlePauseFlowFromList = useCallback(async (flowId: string) => {
+    setFlowActionId(flowId)
+    try {
+      const action = fb.unpublishFlow(flowId)
+      toast.promise(action, {
+        loading: 'Pausing flow...',
+        success: 'Flow paused',
+        error: (err) => `Pause failed: ${formatError(err)}`,
+      })
+      await action
+    } catch {
+      // toast.promise already surfaces the error to the user.
+    } finally {
+      setFlowActionId(null)
+    }
+  }, [fb.unpublishFlow])
 
   const [saveError, setSaveError] = useState<string | null>(null)
   const saveErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -223,11 +282,13 @@ export default function SimpleBuilderPage() {
     setPublishing(true)
     try {
       if (simpleFlow.status === 'published') {
-        await toast.promise(fb.unpublishFlow(simpleFlow.id), {
+        const action = fb.unpublishFlow(simpleFlow.id)
+        toast.promise(action, {
           loading: 'Pausing flow...',
           success: 'Flow paused',
           error: (err) => `Pause failed: ${formatError(err)}`,
         })
+        await action
         setSimpleFlow((prev) => prev ? { ...prev, status: 'draft' } : prev)
       } else {
         const hasStep = simpleFlow.steps.length > 0
@@ -241,13 +302,17 @@ export default function SimpleBuilderPage() {
           toast.error('Save draft once before publishing live.')
           return
         }
-        await toast.promise(fb.publishFlow(simpleFlow.id), {
+        const action = fb.publishFlow(simpleFlow.id)
+        toast.promise(action, {
           loading: 'Publishing flow...',
           success: 'Flow is live',
           error: (err) => `Publish failed: ${formatError(err)}`,
         })
+        await action
         setSimpleFlow((prev) => prev ? { ...prev, status: 'published' } : prev)
       }
+    } catch {
+      // toast.promise already surfaces the error to the user.
     } finally {
       setPublishing(false)
     }
@@ -433,51 +498,80 @@ export default function SimpleBuilderPage() {
   }
 
   // ── Flow list view ──
-  // main has padding + overflow-y-auto on this route, so use a simple block layout (no h-full overflow-hidden)
+  // main has padding + overflow-y-auto on this route, so use a simple block layout.
+  const liveFlows = fb.flows.filter(flow => flow.status === 'published')
+  const draftFlows = fb.flows.filter(flow => flow.status !== 'published')
+  const starterTemplate = simpleLaunchTemplates[0]
+  const renderFlowCard = (flow: typeof fb.flows[number], compact = false) => {
+    const meta = flowMeta[flow.id]
+    const compatible = meta ? isSimpleCompatible(meta.nodes, meta.edges, meta.triggers) : true
+    const keywords = (meta?.triggers ?? [])
+      .filter(t => t.trigger_type === 'keyword' && t.trigger_value)
+      .map(t => t.trigger_value as string)
+    const sc = statusColor[flow.status] ?? statusColor.draft
+    const actionBusy = flowActionId === flow.id
+    const commonActions = {
+      name: flow.name,
+      status: flow.status,
+      statusColor: sc,
+      compact,
+      busy: actionBusy,
+      onPublish: () => void handlePublishFlowFromList(flow.id),
+      onPause: () => void handlePauseFlowFromList(flow.id),
+      onDelete: () => void handleDeleteFlowFromList(flow.id, flow.name),
+    }
+
+    if (!compatible) {
+      return (
+        <ManagedAdvancedFlowCard
+          key={flow.id}
+          {...commonActions}
+          onOpenAdvanced={() => navigate(`/dashboard/builder/advanced?flow=${flow.id}`)}
+        />
+      )
+    }
+
+    return (
+      <ManagedSimpleFlowCard
+        key={flow.id}
+        {...commonActions}
+        keywords={keywords}
+        stepCount={(meta?.nodes ?? []).filter(n => ['message', 'input', 'end'].includes(n.node_type)).length}
+        onEdit={() => navigate(`/dashboard/builder?flow=${flow.id}`)}
+      />
+    )
+  }
+
   return (
-    <div className="space-y-6 max-w-3xl">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5 max-w-6xl">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold font-syne">Conversation Builder</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Build WhatsApp chatbots visually — no code.</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Build WhatsApp chatbots visually. One canvas, many triggers.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="ghost" size="sm" className="text-muted-foreground text-xs gap-1.5" onClick={() => navigate('/dashboard/builder/advanced')}>
             <Workflow className="h-3.5 w-3.5" />
             Advanced Builder
             <ArrowRight className="h-3 w-3" />
           </Button>
+          {starterTemplate && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => void handleCreateFromTemplate(starterTemplate)}
+              disabled={Boolean(creatingTemplateId) || fb.loading}
+              title="Create one generic starter canvas with multiple triggers."
+            >
+              <Zap className="h-4 w-4" />
+              {creatingTemplateId ? 'Creating...' : 'Use starter canvas'}
+            </Button>
+          )}
           <Button size="sm" className="gap-2" onClick={handleCreateFlow} disabled={creating || fb.loading}>
             <Plus className="h-4 w-4" />
-            New conversation
+            New blank
           </Button>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <div>
-          <h2 className="text-sm font-semibold">Launch templates</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Start with a simple draft. Publish only when it is ready.</p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {simpleLaunchTemplates.map(template => (
-            <button
-              key={template.id}
-              type="button"
-              onClick={() => void handleCreateFromTemplate(template)}
-              disabled={Boolean(creatingTemplateId)}
-              className="rounded-lg border border-border bg-surface-raised p-3 text-left hover:bg-muted/30 transition-colors disabled:opacity-60 disabled:cursor-wait"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">{template.name}</p>
-                <span className="text-[10px] rounded-full border border-border px-1.5 py-0.5 text-muted-foreground">Draft</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">{template.description}</p>
-              <p className="text-[10px] text-primary mt-2">
-                {creatingTemplateId === template.id ? 'Creating...' : `Keywords: ${template.keywords.join(', ')}`}
-              </p>
-            </button>
-          ))}
         </div>
       </div>
 
@@ -487,27 +581,180 @@ export default function SimpleBuilderPage() {
         ) : fb.flows.length === 0 ? (
           <EmptyState onCreateFlow={handleCreateFlow} creating={creating} />
         ) : (
-          <div className="grid gap-3 max-w-2xl">
-            {fb.flows.map(flow => {
-              const meta = flowMeta[flow.id]
-              const compatible = meta ? isSimpleCompatible(meta.nodes, meta.edges, meta.triggers) : true
-              const keywords = (meta?.triggers ?? []).filter(t => t.trigger_type === 'keyword' && t.trigger_value).map(t => t.trigger_value as string)
-              const sc = statusColor[flow.status] ?? statusColor.draft
-              return compatible ? (
-                <SimpleFlowCard
-                  key={flow.id} name={flow.name} status={flow.status} statusColor={sc} keywords={keywords}
-                  stepCount={(meta?.nodes ?? []).filter(n => ['message', 'input', 'end'].includes(n.node_type)).length}
-                  onEdit={() => navigate(`/dashboard/builder?flow=${flow.id}`)}
-                />
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold">Live flows</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">Published flows can reply to matching triggers.</p>
+                </div>
+                <span className="text-[10px] rounded-full border border-green-500/20 bg-green-500/10 px-2 py-0.5 font-bold text-green-400">
+                  {liveFlows.length} live
+                </span>
+              </div>
+              {liveFlows.length === 0 ? (
+                <FlowBucketEmpty text="No live flows. Publish a draft when ready." />
               ) : (
-                <AdvancedFlowCard
-                  key={flow.id} name={flow.name} status={flow.status} statusColor={sc}
-                  onOpenAdvanced={() => navigate(`/dashboard/builder/advanced?flow=${flow.id}`)}
-                />
-              )
-            })}
+                <div className="grid gap-3">
+                  {liveFlows.map(flow => renderFlowCard(flow))}
+                </div>
+              )}
+            </section>
+
+            <aside className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold">Drafts</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">Saved, inactive, and safe to edit.</p>
+                </div>
+                <span className="text-[10px] rounded-full border border-border bg-muted px-2 py-0.5 font-bold text-muted-foreground">
+                  {draftFlows.length} draft{draftFlows.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {draftFlows.length === 0 ? (
+                <FlowBucketEmpty text="No drafts right now." />
+              ) : (
+                <div className="grid gap-2">
+                  {draftFlows.map(flow => renderFlowCard(flow, true))}
+                </div>
+              )}
+            </aside>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function FlowBucketEmpty({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+      {text}
+    </div>
+  )
+}
+
+interface FlowCardActions {
+  name: string
+  status: string
+  statusColor: string
+  compact?: boolean
+  busy?: boolean
+  onPublish: () => void
+  onPause: () => void
+  onDelete: () => void
+}
+
+function ManagedStatusBadge({ status, statusColor }: { status: string; statusColor: string }) {
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold uppercase ${status === 'published' ? statusColor : 'bg-muted text-muted-foreground border-border'}`}>
+      {status === 'published' ? 'LIVE' : 'INACTIVE'}
+    </span>
+  )
+}
+
+function ManagedActionsRow({ status, busy, onEdit, onPublish, onPause, onDelete }: FlowCardActions & { onEdit?: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+      {onEdit && (
+        <Button variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={onEdit} disabled={busy}>
+          Edit
+        </Button>
+      )}
+      {status === 'published' ? (
+        <Button variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={onPause} disabled={busy}>
+          Pause
+        </Button>
+      ) : (
+        <Button variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={onPublish} disabled={busy}>
+          Publish
+        </Button>
+      )}
+      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={onDelete} disabled={busy} title="Delete flow">
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  )
+}
+
+function ManagedSimpleFlowCard({
+  name,
+  status,
+  statusColor,
+  keywords,
+  stepCount,
+  onEdit,
+  compact = false,
+  busy = false,
+  onPublish,
+  onPause,
+  onDelete,
+}: FlowCardActions & { keywords: string[]; stepCount: number; onEdit: () => void }) {
+  return (
+    <div className={`flex ${compact ? 'flex-col gap-3 p-3' : 'items-center justify-between gap-3 p-4'} rounded-lg border border-border bg-surface-raised transition-colors`}>
+      <div className="flex items-start gap-3 min-w-0">
+        <div className="rounded-md bg-primary/10 p-2 shrink-0"><MessageSquare className="h-4 w-4 text-primary" /></div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-medium text-sm truncate">{name}</p>
+            <ManagedStatusBadge status={status} statusColor={statusColor} />
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {stepCount} step{stepCount !== 1 ? 's' : ''}{keywords.length > 0 && <> - {keywords.slice(0, 3).join(', ')}{keywords.length > 3 ? ` +${keywords.length - 3}` : ''}</>}
+          </p>
+        </div>
+      </div>
+      <ManagedActionsRow
+        name={name}
+        status={status}
+        statusColor={statusColor}
+        busy={busy}
+        onEdit={onEdit}
+        onPublish={onPublish}
+        onPause={onPause}
+        onDelete={onDelete}
+      />
+    </div>
+  )
+}
+
+function ManagedAdvancedFlowCard({
+  name,
+  status,
+  statusColor,
+  onOpenAdvanced,
+  compact = false,
+  busy = false,
+  onPublish,
+  onPause,
+  onDelete,
+}: FlowCardActions & { onOpenAdvanced: () => void }) {
+  return (
+    <div className={`flex ${compact ? 'flex-col gap-3 p-3' : 'items-center justify-between gap-3 p-4'} rounded-lg border border-border/50 bg-surface-raised/50 opacity-90`}>
+      <div className="flex items-start gap-3 min-w-0">
+        <div className="rounded-md bg-muted p-2 shrink-0"><Lock className="h-4 w-4 text-muted-foreground" /></div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-medium text-sm truncate">{name}</p>
+            <ManagedStatusBadge status={status} statusColor={statusColor} />
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-orange-500/20 bg-orange-500/10 text-orange-400 font-medium">Advanced</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">Uses advanced features. Edit in Advanced Builder.</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+        <Button variant="outline" size="sm" className="h-8 px-2 text-xs gap-1.5" onClick={onOpenAdvanced} disabled={busy}>
+          <ExternalLink className="h-3.5 w-3.5" /> Advanced
+        </Button>
+        <ManagedActionsRow
+          name={name}
+          status={status}
+          statusColor={statusColor}
+          busy={busy}
+          onPublish={onPublish}
+          onPause={onPause}
+          onDelete={onDelete}
+        />
       </div>
     </div>
   )
@@ -530,7 +777,7 @@ function EmptyState({ onCreateFlow, creating }: { onCreateFlow: () => void; crea
 
 function SimpleFlowCard({ name, status, statusColor, keywords, stepCount, onEdit }: { name: string; status: string; statusColor: string; keywords: string[]; stepCount: number; onEdit: () => void }) {
   return (
-    <div className="flex items-center justify-between p-4 rounded-lg border border-border bg-surface-raised hover:bg-muted/30 cursor-pointer transition-colors group" onClick={onEdit}>
+    <div className="flex items-center justify-between p-4 rounded-lg border border-border bg-surface-raised transition-colors">
       <div className="flex items-start gap-3 min-w-0">
         <div className="rounded-md bg-primary/10 p-2 shrink-0"><MessageSquare className="h-4 w-4 text-primary" /></div>
         <div className="min-w-0">
@@ -545,7 +792,7 @@ function SimpleFlowCard({ name, status, statusColor, keywords, stepCount, onEdit
           </p>
         </div>
       </div>
-      <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 ml-3 group-hover:text-foreground transition-colors" />
+      <Button variant="outline" size="sm" className="text-xs shrink-0 ml-3" onClick={onEdit}>Edit</Button>
     </div>
   )
 }

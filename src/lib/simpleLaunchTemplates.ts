@@ -28,7 +28,7 @@ function question(text: string, choices: string[], x: number, y: number): Simple
   }
 }
 
-function end(text = 'Thank you. Our team will contact you shortly.', x = 980, y = 160): SimpleStep {
+function end(text = 'Thank you. Our team will contact you shortly.', x = 1320, y = 260): SimpleStep {
   return stepBase('end', text, x, y)
 }
 
@@ -48,103 +48,70 @@ function connectAll(step: SimpleStep, targetId: string): SimpleStep {
   }
 }
 
-function buildRealEstateMain(): Pick<SimpleFlow, 'steps' | 'triggers'> {
-  const welcome = question('Welcome to Radha Govind Homes.\n\nPlease choose an option:', ['New Customer', 'Existing Customer'], 220, 120)
-  const newMenu = question('Thank you for choosing us.\n\nWhat are you looking for?', ['Buy Flat', 'Ongoing Projects', 'Site Visit', 'Price Details'], 560, 20)
-  const existingMenu = question('Welcome back.\n\nHow may we help you?', ['Payment Query', 'Project Update', 'Support', 'Talk to Team'], 560, 260)
-  const newCapture = stepBase('question', 'Please share your preferred location and budget.\n\nExample: Patia, 80 Lakhs', 900, 20)
-  const existingCapture = stepBase('question', 'Please share your Name + Project Name + Flat Number.', 900, 260)
-  const done = end('Thank you. Our team will contact you shortly.', 1240, 140)
+function connectByTitle(step: SimpleStep, routes: Record<string, string>): SimpleStep {
+  return {
+    ...step,
+    buttons: step.buttons?.map(button => ({ ...button, nextStepId: routes[button.title] ?? null })),
+  }
+}
 
-  welcome.buttons = welcome.buttons?.map(button => ({
-    ...button,
-    nextStepId: button.title === 'New Customer' ? newMenu.id : existingMenu.id,
-  }))
+function buildBusinessStarter(): Pick<SimpleFlow, 'steps' | 'triggers'> {
+  const welcome = question('Welcome. Please choose an option:', ['New Customer', 'Existing Customer'], 220, 200)
+
+  const newCustomer = question('Thanks for contacting us. What are you looking for?', [
+    'Product Details',
+    'Pricing',
+    'Book Visit',
+    'Call Back',
+  ], 560, 60)
+  const existingCustomer = question('Welcome back. How can we help?', [
+    'Payment Query',
+    'Order Update',
+    'Support Issue',
+    'Talk to Team',
+  ], 560, 340)
+
+  const appointment = question('Would you like to book a visit or appointment?', ['Yes', 'Need More Info'], 900, 60)
+  const leadCapture = stepBase('question', 'Please share your name, phone number, requirement, and preferred budget or timeline.', 900, 220)
+  const supportCapture = stepBase('question', 'Please share your name, reference/order/project details, and issue.', 900, 420)
+
+  const appointmentCapture = stepBase('question', 'Please share your name, preferred date, preferred time, and requirement.', 1160, 60)
+  const infoMenu = question('What information do you need?', ['Pricing', 'Location', 'Services', 'Call Back'], 1160, 220)
+  const done = end('Thank you. Our team will contact you shortly.', 1440, 260)
 
   return {
     steps: [
-      welcome,
-      connectAll(newMenu, newCapture.id),
-      connectAll(existingMenu, existingCapture.id),
-      { ...newCapture, nextStepId: done.id },
-      { ...existingCapture, nextStepId: done.id },
+      connectByTitle(welcome, {
+        'New Customer': newCustomer.id,
+        'Existing Customer': existingCustomer.id,
+      }),
+      connectAll(newCustomer, leadCapture.id),
+      connectAll(existingCustomer, supportCapture.id),
+      connectByTitle(appointment, {
+        Yes: appointmentCapture.id,
+        'Need More Info': infoMenu.id,
+      }),
+      { ...leadCapture, nextStepId: done.id },
+      { ...supportCapture, nextStepId: done.id },
+      { ...appointmentCapture, nextStepId: done.id },
+      connectAll(infoMenu, done.id),
       done,
     ],
-    triggers: [trigger(['hi', 'hello', 'property'], welcome.id)],
-  }
-}
-
-function buildSiteVisit(): Pick<SimpleFlow, 'steps' | 'triggers'> {
-  const start = question('Welcome to Radha Govind Homes.\n\nWould you like to schedule a site visit?', ['Yes', 'Need More Info'], 220, 120)
-  const visitCapture = stepBase('question', 'Please share:\n\nName\nProject Name\nPreferred Date\nPreferred Time', 560, 20)
-  const info = question('Please choose what you need:', ['Price', 'Location', 'Amenities', 'Call Back'], 560, 260)
-  const done = end('Thank you. Your request has been received. Our team will confirm shortly.', 900, 140)
-
-  start.buttons = start.buttons?.map(button => ({
-    ...button,
-    nextStepId: button.title === 'Yes' ? visitCapture.id : info.id,
-  }))
-
-  return {
-    steps: [
-      start,
-      { ...visitCapture, nextStepId: done.id },
-      connectAll(info, done.id),
-      done,
+    triggers: [
+      trigger(['hi', 'hello', 'start'], welcome.id),
+      trigger(['sales', 'price', 'pricing', 'lead'], newCustomer.id),
+      trigger(['appointment', 'visit', 'booking'], appointment.id),
+      trigger(['support', 'help'], existingCustomer.id),
     ],
-    triggers: [trigger(['site visit', 'visit'], start.id)],
-  }
-}
-
-function buildMetaLead(): Pick<SimpleFlow, 'steps' | 'triggers'> {
-  const menu = question('Thank you for contacting Radha Govind Homes.\n\nPlease choose:', ['Price Details', 'Ongoing Projects', 'Site Visit', 'Call Back'], 220, 120)
-  const capture = stepBase('question', 'Please share your budget, preferred location, and name.\n\nExample: 70 Lakhs, BJB Nagar, Rahul', 560, 120)
-  const done = end('Thank you. Our property expert will contact you shortly.', 900, 120)
-
-  return {
-    steps: [connectAll(menu, capture.id), { ...capture, nextStepId: done.id }, done],
-    triggers: [trigger(['price', 'projects', 'callback'], menu.id)],
-  }
-}
-
-function buildSupport(): Pick<SimpleFlow, 'steps' | 'triggers'> {
-  const menu = question('Welcome back.\n\nSupport Options:', ['Payment Receipt', 'Construction Update', 'Complaint', 'Talk to Support'], 220, 120)
-  const capture = stepBase('question', 'Please share:\n\nName + Project Name + Flat Number', 560, 120)
-  const done = end('Thank you. Our support team will contact you shortly.', 900, 120)
-
-  return {
-    steps: [connectAll(menu, capture.id), { ...capture, nextStepId: done.id }, done],
-    triggers: [trigger(['support', 'help'], menu.id)],
   }
 }
 
 export const simpleLaunchTemplates: SimpleLaunchTemplate[] = [
   {
-    id: 'real-estate-main',
-    name: 'Real Estate Main Flow',
-    description: 'New/existing customer menu with lead capture.',
-    keywords: ['hi', 'hello', 'property'],
-    build: buildRealEstateMain,
-  },
-  {
-    id: 'site-visit',
-    name: 'Site Visit Flow',
-    description: 'Visit booking and information requests.',
-    keywords: ['site visit', 'visit'],
-    build: buildSiteVisit,
-  },
-  {
-    id: 'meta-ads-lead',
-    name: 'Meta Ads Lead Flow',
-    description: 'Price, projects, site visit, and callback lead capture.',
-    keywords: ['price', 'projects', 'callback'],
-    build: buildMetaLead,
-  },
-  {
-    id: 'support',
-    name: 'Support Flow',
-    description: 'Simple support menu with project and flat details.',
-    keywords: ['support', 'help'],
-    build: buildSupport,
+    id: 'business-starter',
+    name: 'Business Starter Conversation',
+    description: 'One canvas with sales, appointment, ad-lead, and support entry paths.',
+    keywords: ['hi', 'sales', 'appointment', 'support'],
+    build: buildBusinessStarter,
   },
 ]
