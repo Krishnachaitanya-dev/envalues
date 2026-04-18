@@ -244,7 +244,7 @@ function MenuItem({ icon: Icon, label, desc, onClick }: { icon: typeof MessageSq
 export default function SimpleCanvas(props: Props) {
   return (
     <ReactFlowProvider>
-      <div className="h-full min-h-[560px] w-full">
+      <div className="h-full min-h-0 w-full">
         <Inner {...props} />
       </div>
     </ReactFlowProvider>

@@ -28,7 +28,7 @@ export function TopBar() {
   const currentPage = breadcrumbMap[location.pathname] || breadcrumbMap['/dashboard']
 
   return (
-    <nav className="h-[52px] border-b border-border sticky top-0 z-50 backdrop-blur-xl bg-background/90">
+    <nav className="h-[52px] shrink-0 border-b border-border z-50 backdrop-blur-xl bg-background/90">
       <div className="h-full flex items-center justify-between gap-3 px-3 sm:px-4">
         <div className="flex items-center gap-2.5 min-w-0">
           <SidebarTrigger className="md:hidden touch-target rounded-xl" />

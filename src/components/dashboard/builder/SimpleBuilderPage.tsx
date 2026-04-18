@@ -305,7 +305,7 @@ export default function SimpleBuilderPage() {
               disabled={publishing || saving || (simpleFlow.status !== 'published' && !canSave)}
               title={simpleFlow.status === 'published' ? 'Stop new messages from starting this flow' : 'Let this flow reply to new messages'}
             >
-              {publishing ? 'Updatingâ€¦' : simpleFlow.status === 'published' ? 'Deactivate' : 'Activate'}
+              {publishing ? 'Updating...' : simpleFlow.status === 'published' ? 'Deactivate' : 'Activate'}
             </Button>
             <Button
               variant="ghost" size="sm"

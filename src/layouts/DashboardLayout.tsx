@@ -26,16 +26,16 @@ function DashboardShell() {
   )
 
   return (
-    <div className="min-h-screen bg-background flex flex-col overflow-x-clip">
-      <SidebarProvider defaultOpen={false} className="min-h-screen flex-col">
+    <div className="h-dvh max-h-dvh bg-background flex flex-col overflow-hidden">
+      <SidebarProvider defaultOpen={false} className="h-full min-h-0 max-h-full flex-col overflow-hidden">
         <TopBar />
         <div className="flex-1 min-h-0 flex w-full min-w-0 overflow-hidden">
           <DashboardSidebar />
           <div className="flex-1 flex flex-col min-w-0">
             <main className={[
-              'flex-1 min-h-0 min-w-0 overflow-x-hidden safe-area-page',
+              'flex-1 min-h-0 min-w-0 overflow-x-hidden',
               // Builder pages handle their own internal scrolling; keep shell fixed-height (no page scroll).
-              isBuilderRoute ? 'p-0 overflow-hidden' : 'p-3 sm:p-4 lg:p-6 overflow-y-auto',
+              isBuilderRoute ? 'p-0 overflow-hidden' : 'p-3 sm:p-4 lg:p-6 overflow-y-auto safe-area-page',
             ].join(' ')}>
               <Outlet />
             </main>
