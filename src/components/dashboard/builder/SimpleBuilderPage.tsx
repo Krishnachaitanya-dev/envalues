@@ -41,10 +41,12 @@ export default function SimpleBuilderPage() {
     if (fb.flows.length === 0 || activeFlowId) return
     const flowIds = fb.flows.map(f => f.id)
     setMetaLoading(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
     Promise.all([
-      supabase.from('flow_nodes').select('*').in('flow_id', flowIds),
-      supabase.from('flow_edges').select('*').in('flow_id', flowIds),
-      supabase.from('flow_triggers').select('*').in('flow_id', flowIds),
+      db.from('flow_nodes').select('*').in('flow_id', flowIds),
+      db.from('flow_edges').select('*').in('flow_id', flowIds),
+      db.from('flow_triggers').select('*').in('flow_id', flowIds),
     ]).then(([nr, er, tr]) => {
       const meta: Record<string, FlowMeta> = {}
       for (const id of flowIds) {
@@ -63,10 +65,12 @@ export default function SimpleBuilderPage() {
     if (!activeFlowId) { setSimpleFlow(null); setEditorMeta(null); return }
     const flow = fb.flows.find(f => f.id === activeFlowId)
     if (!flow) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
     Promise.all([
-      supabase.from('flow_nodes').select('*').eq('flow_id', activeFlowId),
-      supabase.from('flow_edges').select('*').eq('flow_id', activeFlowId),
-      supabase.from('flow_triggers').select('*').eq('flow_id', activeFlowId),
+      db.from('flow_nodes').select('*').eq('flow_id', activeFlowId),
+      db.from('flow_edges').select('*').eq('flow_id', activeFlowId),
+      db.from('flow_triggers').select('*').eq('flow_id', activeFlowId),
     ]).then(([nr, er, tr]) => {
       const ns = (nr.data ?? []) as FlowNode[]
       const es = (er.data ?? []) as FlowEdge[]
@@ -382,9 +386,10 @@ export default function SimpleBuilderPage() {
   }
 
   // ── Flow list view ──
+  // main has padding + overflow-y-auto on this route, so use a simple block layout (no h-full overflow-hidden)
   return (
-    <div className="flex flex-col h-full min-h-0 bg-background overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+    <div className="space-y-6 max-w-3xl">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold font-syne">Conversation Builder</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Build WhatsApp chatbots visually — no code.</p>
@@ -402,7 +407,7 @@ export default function SimpleBuilderPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div>
         {fb.loading || metaLoading ? (
           <p className="text-muted-foreground text-sm">Loading conversations…</p>
         ) : fb.flows.length === 0 ? (

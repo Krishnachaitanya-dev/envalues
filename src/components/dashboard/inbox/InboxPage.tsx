@@ -92,7 +92,7 @@ export default function InboxPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-118px)] sm:h-[calc(100vh-120px)] gap-0 rounded-2xl border border-border overflow-hidden bg-card min-w-0">
+    <div className="flex h-full gap-0 rounded-2xl border border-border overflow-hidden bg-card min-w-0">
 
       {/* ── Left: Session list ─────────────────────────────────────────── */}
       <div className={`${selectedPhone ? 'hidden md:flex' : 'flex'} w-full md:w-72 shrink-0 flex-col border-r border-border`}>

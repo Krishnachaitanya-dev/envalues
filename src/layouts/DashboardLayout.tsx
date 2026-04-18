@@ -9,7 +9,14 @@ import { RightPanel } from '@/components/dashboard/RightPanel'
 function DashboardShell() {
   const { loading } = useDashboard()
   const location = useLocation()
-  const isBuilderRoute = location.pathname.startsWith('/dashboard/builder')
+  // Canvas editors need p-0 overflow-hidden so ReactFlow fills the viewport.
+  // The simple builder LIST page (/dashboard/builder with no ?flow=) is a normal scrollable page.
+  const isBuilderCanvas =
+    location.pathname.startsWith('/dashboard/builder/') ||
+    (location.pathname === '/dashboard/builder' && new URLSearchParams(location.search).has('flow'))
+
+  // WhatsApp preview panel only makes sense on overview + inbox
+  const showRightPanel = location.pathname === '/dashboard' || location.pathname === '/dashboard/inbox'
 
   if (loading) return (
     <div className="min-h-screen bg-background flex items-center justify-center">
@@ -26,21 +33,24 @@ function DashboardShell() {
   )
 
   return (
-    <div className="h-dvh max-h-dvh bg-background flex flex-col overflow-hidden">
-      <SidebarProvider defaultOpen={false} className="h-full min-h-0 max-h-full flex-col overflow-hidden">
+    <div className="h-dvh bg-background flex flex-col overflow-hidden">
+      <SidebarProvider
+        defaultOpen={false}
+        className="flex-1 overflow-hidden"
+        style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}
+      >
         <TopBar />
-        <div className="h-[calc(100dvh-52px)] min-h-0 flex w-full min-w-0 overflow-hidden">
+        <div className="flex-1 min-h-0 flex w-full min-w-0 overflow-hidden">
           <DashboardSidebar />
           <div className="flex-1 flex flex-col min-w-0">
             <main className={[
               'flex-1 min-h-0 min-w-0 overflow-x-hidden',
-              // Builder pages handle their own internal scrolling; keep shell fixed-height (no page scroll).
-              isBuilderRoute ? 'p-0 overflow-hidden' : 'p-3 sm:p-4 lg:p-6 overflow-y-auto safe-area-page',
+              isBuilderCanvas ? 'p-0 overflow-hidden' : 'p-3 sm:p-4 lg:p-6 overflow-y-auto safe-area-page',
             ].join(' ')}>
               <Outlet />
             </main>
           </div>
-          {!isBuilderRoute && <RightPanel />}
+          {showRightPanel && <RightPanel />}
         </div>
       </SidebarProvider>
     </div>
