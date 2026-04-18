@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, ExternalLink, FileText, Image, Loader2, Paperclip, RotateCw, Trash2, Video, X } from 'lucide-react'
+import { toast } from '@/components/ui/sonner'
+import { formatError } from '@/lib/formatError'
 import {
   deleteFlowNodeMedia,
   buildMessageConfigForSave,
@@ -71,6 +73,7 @@ export default function NodeConfigPanel({
   const [retryCount, setRetryCount] = useState(0)
   const [unsavedUploadPaths, setUnsavedUploadPaths] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const initialSnapshot = useRef('')
 
@@ -611,11 +614,21 @@ export default function NodeConfigPanel({
           {saving ? 'Saving...' : 'Save node'}
         </button>
         <button
-          onClick={() => { if (uploading) return; if (confirm('Delete this node?')) void onDeleteNode(node.id) }}
-          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-destructive border border-destructive/30 hover:bg-destructive/10 transition-colors"
+          onClick={() => {
+            if (uploading || deleting) return
+            if (!confirm('Delete this node?')) return
+            setDeleting(true)
+            void toast.promise(onDeleteNode(node.id), {
+              loading: 'Deleting node...',
+              success: 'Node deleted',
+              error: (err) => `Delete failed: ${formatError(err)}`,
+            }).finally(() => setDeleting(false))
+          }}
+          disabled={deleting}
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-destructive border border-destructive/30 hover:bg-destructive/10 transition-colors disabled:opacity-50"
         >
           <Trash2 size={13} />
-          Delete node
+          {deleting ? 'Deleting...' : 'Delete node'}
         </button>
       </div>
     </aside>

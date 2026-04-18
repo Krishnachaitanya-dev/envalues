@@ -305,11 +305,31 @@ export function useFlowBuilder(ownerId: string | null) {
 
   const deleteNode = useCallback(async (nodeId: string) => {
     const nodeToDelete = dbNodes.find((node) => node.id === nodeId)
+    if (!nodeToDelete) return
+
+    const formatDbError = (e: any) => [e?.message, e?.details, e?.hint].filter(Boolean).join(' - ')
+
+    // Prevent FK blocks:
+    // - flows.entry_node_id may reference a start node
+    // - flow_sessions.current_node_id may reference any node
+    if (nodeToDelete.node_type === 'start') {
+      const r = await (supabase.from('flows') as any)
+        .update({ entry_node_id: null })
+        .eq('id', nodeToDelete.flow_id)
+      if (r.error) throw new Error('Could not detach flow entry: ' + formatDbError(r.error))
+      setFlows((prev) => prev.map((flow) => flow.id === nodeToDelete.flow_id ? { ...flow, entry_node_id: null } : flow))
+    }
+
+    const sessions = await (supabase.from('flow_sessions') as any)
+      .delete()
+      .eq('current_node_id', nodeId)
+    if (sessions.error) throw new Error('Could not clear blocking sessions: ' + formatDbError(sessions.error))
+
     const { error } = await (supabase.from('flow_nodes') as any)
       .delete()
       .eq('id', nodeId)
 
-    if (error) throw error
+    if (error) throw new Error('Could not delete node: ' + formatDbError(error))
     await deleteFlowNodeMedia(getUploadedStoragePaths(nodeToDelete?.config ?? {}))
 
     setDbNodes((prev) => prev.filter((node) => node.id !== nodeId))
@@ -339,7 +359,7 @@ export function useFlowBuilder(ownerId: string | null) {
       .delete()
       .eq('id', edgeId)
 
-    if (error) throw error
+    if (error) throw new Error(error.message)
 
     setDbEdges((prev) => prev.filter((edge) => edge.id !== edgeId))
     setRfEdges((prev) => prev.filter((edge) => edge.id !== edgeId))
@@ -381,14 +401,43 @@ export function useFlowBuilder(ownerId: string | null) {
     const knownMediaPaths = selectedFlowId === flowId
       ? dbNodes.flatMap((node) => getUploadedStoragePaths(node.config ?? {}))
       : []
-    const { error } = await (supabase.from('flows') as any)
+    const formatDbError = (e: any) => [e?.message, e?.details, e?.hint].filter(Boolean).join(' - ')
+
+    // Prevent FK blocks from sessions + flow entry node when deleting nodes.
+    const detach = await (supabase.from('flows') as any)
+      .update({ entry_node_id: null })
+      .eq('id', flowId)
+    if (detach.error) throw new Error('Could not detach flow entry: ' + formatDbError(detach.error))
+
+    const sessions = await (supabase.from('flow_sessions') as any)
+      .delete()
+      .eq('flow_id', flowId)
+    if (sessions.error) throw new Error('Could not clear old sessions: ' + formatDbError(sessions.error))
+
+    const triggers = await (supabase.from('flow_triggers') as any)
+      .delete()
+      .eq('flow_id', flowId)
+    if (triggers.error) throw new Error('Could not clear triggers: ' + formatDbError(triggers.error))
+
+    const edges = await (supabase.from('flow_edges') as any)
+      .delete()
+      .eq('flow_id', flowId)
+    if (edges.error) throw new Error('Could not clear edges: ' + formatDbError(edges.error))
+
+    const nodes = await (supabase.from('flow_nodes') as any)
+      .delete()
+      .eq('flow_id', flowId)
+    if (nodes.error) throw new Error('Could not clear nodes: ' + formatDbError(nodes.error))
+
+    const flow = await (supabase.from('flows') as any)
       .delete()
       .eq('id', flowId)
+    if (flow.error) throw new Error('Could not delete flow: ' + formatDbError(flow.error))
 
-    if (error) throw error
     await deleteFlowNodeMedia(knownMediaPaths)
     await deleteFlowMediaPrefix(ownerId, flowId)
     setFlows((prev) => prev.filter((flow) => flow.id !== flowId))
+    setTriggers((prev) => prev.filter((trigger) => trigger.flow_id !== flowId))
     if (selectedFlowId === flowId) clearFlowState()
   }, [clearFlowState, dbNodes, ownerId, selectedFlowId])
 

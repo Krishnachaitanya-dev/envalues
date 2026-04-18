@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import {
   Plus, X, Image as ImageIcon, Film, FileText, Youtube, Link2, Upload, Loader2,
 } from 'lucide-react'
+import { toast } from '@/components/ui/sonner'
 import type { SimpleStep, SimpleButton, SimpleMedia } from '@/types/simpleFlow'
 import { MAX_SIMPLE_ATTACHMENTS, MAX_SIMPLE_BUTTONS, MAX_SIMPLE_BUTTON_TITLE, isYouTubeUrl } from '@/types/simpleFlow'
 import { uploadFlowNodeMedia, MAX_ATTACHMENT_CAPTION_LENGTH } from '@/features/flow-media/uploadFlowNodeMedia'
@@ -101,7 +102,7 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
         </p>
         {onDelete && (
           <button
-            onClick={() => onDelete(step.id)}
+            onClick={() => { onDelete(step.id); toast.success('Step deleted') }}
             className="text-[11px] text-muted-foreground hover:text-destructive transition-colors"
           >
             Delete step

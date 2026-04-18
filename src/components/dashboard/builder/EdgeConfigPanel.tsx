@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import type { ConditionType, FlowEdge } from '@/integrations/supabase/flow-types'
+import { toast } from '@/components/ui/sonner'
+import { formatError } from '@/lib/formatError'
 
 const inputCls = 'w-full px-3 py-2 rounded-lg bg-background border border-input text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all'
 const labelCls = 'block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1'
@@ -32,6 +34,7 @@ export default function EdgeConfigPanel({ edge, onClose, onUpdate, onDelete, onD
   const [priority, setPriority] = useState(0)
   const [label, setLabel] = useState('')
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [initialSnapshot, setInitialSnapshot] = useState('')
 
   useEffect(() => {
@@ -173,10 +176,20 @@ export default function EdgeConfigPanel({ edge, onClose, onUpdate, onDelete, onD
           {saving ? 'Saving...' : 'Save condition'}
         </button>
         <button
-          onClick={() => { if (confirm('Delete this edge?')) void onDelete(edge.id) }}
-          className="w-full px-3 py-2 rounded-lg text-xs font-semibold text-destructive border border-destructive/30 hover:bg-destructive/10 transition-colors"
+          onClick={() => {
+            if (deleting) return
+            if (!confirm('Delete this edge?')) return
+            setDeleting(true)
+            void toast.promise(onDelete(edge.id), {
+              loading: 'Deleting edge...',
+              success: 'Edge deleted',
+              error: (err) => `Delete failed: ${formatError(err)}`,
+            }).finally(() => setDeleting(false))
+          }}
+          disabled={deleting}
+          className="w-full px-3 py-2 rounded-lg text-xs font-semibold text-destructive border border-destructive/30 hover:bg-destructive/10 transition-colors disabled:opacity-50"
         >
-          Delete edge
+          {deleting ? 'Deleting...' : 'Delete edge'}
         </button>
       </div>
     </aside>

@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { Check, Pencil, Plus, Trash2, Workflow, X } from 'lucide-react'
+import { Check, Loader2, Pencil, Plus, Trash2, Workflow, X } from 'lucide-react'
 import type { Flow } from '@/integrations/supabase/flow-types'
 import { cn } from '@/lib/utils'
+import { toast } from '@/components/ui/sonner'
+import { formatError } from '@/lib/formatError'
 
 interface FlowListProps {
   flows: Flow[]
@@ -27,6 +29,7 @@ export default function FlowList({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const handleCreate = async () => {
     const name = newName.trim()
@@ -61,7 +64,16 @@ export default function FlowList({
 
   const handleDelete = async (flow: Flow) => {
     if (!confirm(`Delete "${flow.name}" and all its nodes?`)) return
-    await onDeleteFlow(flow.id)
+    setDeletingId(flow.id)
+    try {
+      await toast.promise(onDeleteFlow(flow.id), {
+        loading: 'Deleting flow...',
+        success: 'Flow deleted',
+        error: (err) => `Delete failed: ${formatError(err)}`,
+      })
+    } finally {
+      setDeletingId((prev) => (prev === flow.id ? null : prev))
+    }
   }
 
   return (
@@ -205,9 +217,10 @@ export default function FlowList({
                         event.stopPropagation()
                         void handleDelete(flow)
                       }}
-                      className="w-6 h-6 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive flex items-center justify-center"
+                      disabled={saving || deletingId === flow.id}
+                      className="w-6 h-6 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive flex items-center justify-center disabled:opacity-50"
                     >
-                      <Trash2 size={12} />
+                      {deletingId === flow.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                     </button>
                   </span>
                 </div>
