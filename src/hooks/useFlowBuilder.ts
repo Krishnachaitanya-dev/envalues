@@ -442,9 +442,25 @@ export function useFlowBuilder(ownerId: string | null) {
   }, [clearFlowState, dbNodes, ownerId, selectedFlowId])
 
   const publishFlow = useCallback(async (flowId: string) => {
-    const startNode = dbNodes.find((node) => node.node_type === 'start')
+    // If caller publishes a flow that isn't currently selected, dbNodes may not match.
+    // Resolve start node id from DB for correctness.
+    const startNodeId = selectedFlowId === flowId
+      ? (dbNodes.find((node) => node.node_type === 'start')?.id ?? null)
+      : null
+
+    let resolvedStartId = startNodeId
+    if (!resolvedStartId) {
+      const { data, error } = await (supabase.from('flow_nodes') as any)
+        .select('id')
+        .eq('flow_id', flowId)
+        .eq('node_type', 'start')
+        .maybeSingle()
+      if (error) throw error
+      resolvedStartId = (data as any)?.id ?? null
+    }
+
     const { error } = await (supabase.from('flows') as any)
-      .update({ status: 'published', entry_node_id: startNode?.id ?? null })
+      .update({ status: 'published', entry_node_id: resolvedStartId })
       .eq('id', flowId)
 
     if (error) throw error
@@ -454,10 +470,10 @@ export function useFlowBuilder(ownerId: string | null) {
 
     if (triggerError) throw triggerError
     setFlows((prev) => prev.map((flow) => flow.id === flowId
-      ? { ...flow, status: 'published', entry_node_id: startNode?.id ?? flow.entry_node_id }
+      ? { ...flow, status: 'published', entry_node_id: resolvedStartId ?? flow.entry_node_id }
       : flow))
     setTriggers((prev) => prev.map((trigger) => trigger.flow_id === flowId ? { ...trigger, is_active: true } : trigger))
-  }, [dbNodes])
+  }, [dbNodes, selectedFlowId])
 
   const unpublishFlow = useCallback(async (flowId: string) => {
     const { error } = await (supabase.from('flows') as any)
@@ -483,8 +499,10 @@ export function useFlowBuilder(ownerId: string | null) {
   const addTrigger = useCallback(async (trigger: Omit<FlowTrigger, 'id' | 'owner_id' | 'created_at'>) => {
     if (!ownerId) return
 
+    // `normalized_trigger_value` is GENERATED ALWAYS in some DBs; never send it on insert.
+    const { normalized_trigger_value: _n, ...safeTrigger } = trigger as any
     const { data, error } = await (supabase.from('flow_triggers') as any)
-      .insert({ ...trigger, owner_id: ownerId })
+      .insert({ ...safeTrigger, owner_id: ownerId })
       .select('*')
       .single()
 

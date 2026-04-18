@@ -9,6 +9,8 @@ import { graphToSimple, simpleToGraph } from '@/lib/simpleFlowAdapter'
 import type { FlowNode, FlowEdge, FlowTrigger } from '@/integrations/supabase/flow-types'
 import type { SimpleFlow, SimpleStep, SimpleTrigger } from '@/types/simpleFlow'
 import { supabase } from '@/integrations/supabase/client'
+import { toast } from '@/components/ui/sonner'
+import { formatError } from '@/lib/formatError'
 import StepEditor from './simple/StepEditor'
 import TriggerPanel from './simple/TriggerPanel'
 import ConversationPreview from './simple/ConversationPreview'
@@ -32,6 +34,7 @@ export default function SimpleBuilderPage() {
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(true)
+  const [publishing, setPublishing] = useState(false)
 
   // ── Flow list meta fetch ──
   useEffect(() => {
@@ -136,8 +139,10 @@ export default function SimpleBuilderPage() {
       }
 
       if (triggers.length > 0) {
+        // DB column `normalized_trigger_value` may be GENERATED ALWAYS; omit it even if present.
+        const safeTriggers = (triggers as any[]).map(({ normalized_trigger_value: _n, ...rest }) => rest)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const r = await (supabase.from('flow_triggers') as any).insert(triggers)
+        const r = await (supabase.from('flow_triggers') as any).insert(safeTriggers)
         if (r.error) throw new Error('Could not save triggers: ' + r.error.message)
       }
 
@@ -160,6 +165,41 @@ export default function SimpleBuilderPage() {
       setSaving(false)
     }
   }, [simpleFlow, user, editorMeta])
+
+  const handleTogglePublish = useCallback(async () => {
+    if (!simpleFlow) return
+    setPublishing(true)
+    try {
+      if (simpleFlow.status === 'published') {
+        await toast.promise(fb.unpublishFlow(simpleFlow.id), {
+          loading: 'Deactivating flow...',
+          success: 'Flow deactivated',
+          error: (err) => `Deactivate failed: ${formatError(err)}`,
+        })
+        setSimpleFlow((prev) => prev ? { ...prev, status: 'draft' } : prev)
+      } else {
+        const hasStep = simpleFlow.steps.length > 0
+        const hasTrigger = simpleFlow.triggers.some(t => t.keywords.length > 0 && t.targetStepId)
+        if (!hasStep || !hasTrigger) {
+          toast.error('Add trigger + step, then save, before activating.')
+          return
+        }
+        // Needs saved Start node (created on first save).
+        if (!editorMeta?.nodes?.some((n) => n.node_type === 'start')) {
+          toast.error('Save flow once before activating.')
+          return
+        }
+        await toast.promise(fb.publishFlow(simpleFlow.id), {
+          loading: 'Activating flow...',
+          success: 'Flow activated',
+          error: (err) => `Activate failed: ${formatError(err)}`,
+        })
+        setSimpleFlow((prev) => prev ? { ...prev, status: 'published' } : prev)
+      }
+    } finally {
+      setPublishing(false)
+    }
+  }, [simpleFlow, fb.publishFlow, fb.unpublishFlow, editorMeta?.nodes])
 
   const handleAddStep = useCallback((kind: 'message' | 'open_text' | 'button_choices') => {
     setSimpleFlow(prev => {
@@ -223,7 +263,7 @@ export default function SimpleBuilderPage() {
   if (activeFlowId && simpleFlow) {
     const selectedStep = simpleFlow.steps.find(s => s.id === selectedStepId) ?? null
     return (
-      <div className="flex flex-col h-full min-h-[calc(100dvh-52px)] bg-background overflow-hidden">
+      <div className="flex flex-col h-full min-h-0 bg-background overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -257,6 +297,16 @@ export default function SimpleBuilderPage() {
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <Button
+              size="sm"
+              variant={simpleFlow.status === 'published' ? 'outline' : 'default'}
+              className="gap-2 min-w-[92px]"
+              onClick={handleTogglePublish}
+              disabled={publishing || saving || (simpleFlow.status !== 'published' && !canSave)}
+              title={simpleFlow.status === 'published' ? 'Stop new messages from starting this flow' : 'Let this flow reply to new messages'}
+            >
+              {publishing ? 'Updatingâ€¦' : simpleFlow.status === 'published' ? 'Deactivate' : 'Activate'}
+            </Button>
             <Button
               variant="ghost" size="sm"
               className="text-xs text-muted-foreground gap-1.5"
@@ -333,7 +383,7 @@ export default function SimpleBuilderPage() {
 
   // ── Flow list view ──
   return (
-    <div className="flex flex-col h-full min-h-[calc(100dvh-52px)] bg-background">
+    <div className="flex flex-col h-full min-h-0 bg-background overflow-hidden">
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <div>
           <h1 className="text-xl font-semibold font-syne">Conversation Builder</h1>

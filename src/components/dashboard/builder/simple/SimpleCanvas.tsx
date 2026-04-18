@@ -157,7 +157,7 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
   }, [flow.steps, onChangeSteps])
 
   return (
-    <div className="relative h-full min-h-[560px] w-full bg-background">
+    <div className="relative h-full min-h-0 w-full bg-background">
       {/* Toolbar */}
       <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
         <div className="relative">

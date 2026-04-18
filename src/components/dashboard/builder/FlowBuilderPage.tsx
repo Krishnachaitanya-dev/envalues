@@ -75,7 +75,7 @@ export default function FlowBuilderPage() {
   const showEdgePanel = !showNodePanel && Boolean(fb.selectedEdgeId)
 
   return (
-    <div className="h-full min-h-[calc(100dvh-52px)] flex min-w-0 overflow-hidden">
+    <div className="h-full min-h-0 flex min-w-0 overflow-hidden">
       <div className="hidden md:flex">
         <FlowList
           flows={fb.flows}
