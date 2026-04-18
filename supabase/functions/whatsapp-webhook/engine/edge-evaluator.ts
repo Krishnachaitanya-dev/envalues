@@ -1,5 +1,9 @@
 import type { FlowEdge, FlowSession } from './types.ts'
 
+function normalizeComparable(value: string): string {
+  return value.trim().toLowerCase()
+}
+
 /**
  * Evaluate a single edge condition against inbound text + session context.
  * condition_expression is evaluated if an evalExpression function is provided;
@@ -24,14 +28,14 @@ export function matchesEdge(
     case 'always':
       return true
     case 'equals':
-      return inbound === (edge.condition_value ?? '')
+      return normalizeComparable(inbound) === normalizeComparable(edge.condition_value ?? '')
     case 'contains': {
       const val = edge.condition_value
-      return val !== null && val !== '' && inbound.includes(val)
+      return val !== null && val !== '' && normalizeComparable(inbound).includes(normalizeComparable(val))
     }
     case 'starts_with': {
       const val = edge.condition_value
-      return val !== null && val !== '' && inbound.startsWith(val)
+      return val !== null && val !== '' && normalizeComparable(inbound).startsWith(normalizeComparable(val))
     }
     case 'regex': {
       const val = edge.condition_value

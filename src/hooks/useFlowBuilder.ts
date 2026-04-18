@@ -421,6 +421,12 @@ export function useFlowBuilder(ownerId: string | null) {
       .eq('flow_id', flowId)
 
     if (triggerError) throw triggerError
+    const { error: sessionError } = await (supabase.from('flow_sessions') as any)
+      .update({ status: 'expired' })
+      .eq('flow_id', flowId)
+      .eq('status', 'active')
+
+    if (sessionError) throw sessionError
     setFlows((prev) => prev.map((flow) => flow.id === flowId ? { ...flow, status: 'draft' } : flow))
     setTriggers((prev) => prev.map((trigger) => trigger.flow_id === flowId ? { ...trigger, is_active: false } : trigger))
   }, [])

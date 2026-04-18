@@ -79,7 +79,7 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
             })
           }
         }
-      } else if (step.nextStepId) {
+      } else if (step.mode !== 'button_choices' && step.nextStepId) {
         edges.push({
           id: `${step.id}:next`,
           source: step.id,
@@ -157,7 +157,7 @@ function Inner({ flow, selectedStepId, onSelectStep, onChangeSteps, onDeleteStep
   }, [flow.steps, onChangeSteps])
 
   return (
-    <div className="h-full w-full relative bg-background">
+    <div className="relative h-full min-h-[560px] w-full bg-background">
       {/* Toolbar */}
       <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
         <div className="relative">
@@ -244,7 +244,9 @@ function MenuItem({ icon: Icon, label, desc, onClick }: { icon: typeof MessageSq
 export default function SimpleCanvas(props: Props) {
   return (
     <ReactFlowProvider>
-      <Inner {...props} />
+      <div className="h-full min-h-[560px] w-full">
+        <Inner {...props} />
+      </div>
     </ReactFlowProvider>
   )
 }

@@ -11,6 +11,7 @@ describe('mobile responsive layout source contract', () => {
     expect(dashboard).toContain('safe-area-page')
     expect(dashboard).toContain('className="min-h-screen flex-col"')
     expect(dashboard).toContain("isBuilderRoute ? 'p-0'")
+    expect(dashboard).toContain('{!isBuilderRoute && <RightPanel />}')
     expect(admin).toContain('mobileNavOpen')
     expect(admin).toContain('fixed inset-0 z-50 md:hidden')
     expect(adminTopBar).toContain('Open admin navigation')

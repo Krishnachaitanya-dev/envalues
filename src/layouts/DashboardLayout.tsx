@@ -39,7 +39,7 @@ function DashboardShell() {
               <Outlet />
             </main>
           </div>
-          <RightPanel />
+          {!isBuilderRoute && <RightPanel />}
         </div>
       </SidebarProvider>
     </div>

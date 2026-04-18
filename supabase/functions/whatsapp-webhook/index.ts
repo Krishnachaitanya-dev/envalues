@@ -82,6 +82,15 @@ async function getFlowEntryNode(flowId: string): Promise<string> {
   return data?.entry_node_id ?? ''
 }
 
+async function isFlowPublished(flowId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('flows')
+    .select('status')
+    .eq('id', flowId)
+    .single()
+  return data?.status === 'published'
+}
+
 async function expireSession(sessionId: string): Promise<void> {
   await supabase
     .from('flow_sessions')
@@ -322,7 +331,12 @@ async function receiveMessage(
   const triggers: FlowTrigger[] = (triggerRows ?? []).map(({ flows: _f, ...t }) => t as FlowTrigger)
 
   // 4. Get active session
-  const session = await getActiveSession(ownerId, phone)
+  let session = await getActiveSession(ownerId, phone)
+
+  if (session?.status === 'active' && !(await isFlowPublished(session.flow_id))) {
+    await expireSession(session.id)
+    session = null
+  }
 
   // 5. Handoff guard: bot is silent during agent sessions
   if (session?.status === 'handoff') {
@@ -348,6 +362,10 @@ async function receiveMessage(
   }
 
   // 8. No session → trigger resolution
+  if (triggers.length === 0) {
+    return
+  }
+
   const trigger = resolveTrigger(triggers, text)
   if (!trigger) {
     await sendWhatsAppMessage(phone, { type: 'text', text: "Reply 'hi' to get started." }, ownerCreds)

@@ -176,9 +176,13 @@ export default function FlowList({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-foreground truncate">{flow.name}</p>
-                      {flow.status === 'published' && (
+                      {flow.status === 'published' ? (
                         <span className="text-[9px] font-bold uppercase text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">
                           Live
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-bold uppercase text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded-full">
+                          Inactive
                         </span>
                       )}
                     </div>

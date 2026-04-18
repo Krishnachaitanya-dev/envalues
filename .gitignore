@@ -32,6 +32,9 @@ graphify-out/
 .claude/
 .superpowers/
 codex-plugin-cc-main/
+.codex/
+caveman-main.zip
+plugins/
 merge_semantic.py
 migration_payload.json
 

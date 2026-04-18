@@ -32,6 +32,7 @@ export function graphToSimple(
   edges: FlowEdge[],
   triggers: FlowTrigger[],
 ): SimpleFlow {
+  const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
   const edgesBySource: Record<string, FlowEdge[]> = {}
   for (const e of edges) {
     if (!edgesBySource[e.source_node_id]) edgesBySource[e.source_node_id] = []
@@ -66,7 +67,7 @@ export function graphToSimple(
     if (node.node_type === 'message') {
       const cfg = node.config as MessageConfig
       const buttons: SimpleButton[] = (cfg.buttons ?? []).map(b => {
-        const matchEdge = conditionalEdges.find(e => e.condition_value === b.title)
+        const matchEdge = conditionalEdges.find(e => norm(e.condition_value) === norm(b.title))
         const nextNode = matchEdge ? nodes.find(n => n.id === matchEdge.target_node_id) : null
         return {
           id: b.id,
@@ -146,7 +147,8 @@ export interface GraphTriggerOutput {
   flow_id: string
   trigger_type: 'keyword'
   trigger_value: string
-  normalized_trigger_value: string
+  // Some deployments make this column generated/identity. Do not send on insert.
+  normalized_trigger_value?: string
   target_node_id: string | null
   priority: number
   is_active: boolean
@@ -262,7 +264,6 @@ export function simpleToGraph(
         flow_id: flowId,
         trigger_type: 'keyword',
         trigger_value: trimmed,
-        normalized_trigger_value: trimmed.toLowerCase(),
         target_node_id: target,
         priority: priority++,
         is_active: true,

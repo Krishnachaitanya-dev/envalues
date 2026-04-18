@@ -12,13 +12,14 @@ import { uploadFlowNodeMedia, MAX_ATTACHMENT_CAPTION_LENGTH } from '@/features/f
 
 interface Props {
   step: SimpleStep
+  steps?: SimpleStep[]
   ownerId: string | null
   flowId: string | null
   onChange: (updated: SimpleStep) => void
   onDelete?: (id: string) => void
 }
 
-export default function StepEditor({ step, ownerId, flowId, onChange, onDelete }: Props) {
+export default function StepEditor({ step, steps = [step], ownerId, flowId, onChange, onDelete }: Props) {
   const update = (patch: Partial<SimpleStep>) => onChange({ ...step, ...patch })
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -27,6 +28,7 @@ export default function StepEditor({ step, ownerId, flowId, onChange, onDelete }
 
   const attachments = step.attachments ?? []
   const canAddAttachment = attachments.length < MAX_SIMPLE_ATTACHMENTS
+  const targetSteps = steps.filter(s => s.id !== step.id)
 
   const addButton = () => {
     if ((step.buttons?.length ?? 0) >= MAX_SIMPLE_BUTTONS) return
@@ -115,8 +117,14 @@ export default function StepEditor({ step, ownerId, flowId, onChange, onDelete }
             onChange={e => {
               const v = e.target.value
               if (v === 'none') update({ type: 'message', mode: undefined, buttons: undefined })
-              else if (v === 'button_choices') update({ type: 'question', mode: 'button_choices' })
-              else update({ type: 'question', mode: 'open_text', buttons: undefined })
+              else if (v === 'button_choices') {
+                update({
+                  type: 'question',
+                  mode: 'button_choices',
+                  buttons: step.buttons?.length ? step.buttons : [{ id: crypto.randomUUID(), title: '', nextStepId: null }],
+                  nextStepId: undefined,
+                })
+              } else update({ type: 'question', mode: 'open_text', buttons: undefined })
             }}
             className="text-xs h-7 rounded-md border border-input bg-background px-2 text-foreground"
           >
@@ -200,16 +208,33 @@ export default function StepEditor({ step, ownerId, flowId, onChange, onDelete }
         <div className="space-y-2">
           <Label className="text-xs">Reply buttons <span className="text-muted-foreground">(max {MAX_SIMPLE_BUTTONS})</span></Label>
           {(step.buttons ?? []).map((btn, i) => (
-            <div key={btn.id} className="flex gap-2 items-start">
-              <Input
-                value={btn.title}
-                onChange={e => updateBtn(i, { title: e.target.value.slice(0, MAX_SIMPLE_BUTTON_TITLE) })}
-                placeholder={`Button ${i + 1} label (${MAX_SIMPLE_BUTTON_TITLE} chars max)`}
-                className="text-xs h-8 flex-1"
-              />
-              <button onClick={() => removeBtn(i)} className="mt-1 p-1 text-muted-foreground hover:text-destructive">
-                <X className="h-3.5 w-3.5" />
-              </button>
+            <div key={btn.id} className="space-y-1.5">
+              <div className="flex gap-2 items-start">
+                <Input
+                  value={btn.title}
+                  onChange={e => updateBtn(i, { title: e.target.value.slice(0, MAX_SIMPLE_BUTTON_TITLE) })}
+                  placeholder={`Button ${i + 1} label (${MAX_SIMPLE_BUTTON_TITLE} chars max)`}
+                  className="text-xs h-8 flex-1"
+                />
+                <button onClick={() => removeBtn(i)} className="mt-1 p-1 text-muted-foreground hover:text-destructive">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2 pl-1">
+                <Label className="text-[10px] text-muted-foreground w-16 shrink-0">After click</Label>
+                <select
+                  value={btn.nextStepId ?? ''}
+                  onChange={e => updateBtn(i, { nextStepId: e.target.value || null })}
+                  className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-[11px] text-foreground"
+                >
+                  <option value="">End conversation</option>
+                  {targetSteps.map(target => (
+                    <option key={target.id} value={target.id}>
+                      {(target.text.trim() || (target.type === 'question' ? 'Untitled question' : 'Untitled message')).slice(0, 70)}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           ))}
           {(step.buttons?.length ?? 0) < MAX_SIMPLE_BUTTONS && (

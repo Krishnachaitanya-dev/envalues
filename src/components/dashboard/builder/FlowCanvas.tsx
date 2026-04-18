@@ -156,7 +156,7 @@ function CanvasInner(props: FlowCanvasProps) {
   return (
     <div className="h-full min-h-0 w-full flex-1 relative overflow-hidden bg-background">
       <div className="absolute top-3 left-3 right-3 z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pointer-events-none">
-        <div className="relative pointer-events-auto">
+        <div className="relative pointer-events-auto flex items-center gap-2">
           <button
             onClick={() => setAddMenuOpen((open) => !open)}
             className="inline-flex touch-target items-center gap-2 rounded-xl border border-border bg-card/95 backdrop-blur px-3 py-2 text-xs font-bold text-foreground shadow-sm hover:bg-muted"
@@ -166,6 +166,12 @@ function CanvasInner(props: FlowCanvasProps) {
             Add node
             <ChevronDown size={13} className={addMenuOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
           </button>
+          <span className={[
+            'text-[10px] px-2 py-1 rounded-full border font-bold uppercase',
+            isPublished ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-muted text-muted-foreground border-border',
+          ].join(' ')}>
+            {isPublished ? 'LIVE' : 'INACTIVE'}
+          </span>
 
           {addMenuOpen && (
             <div className="fixed left-3 right-3 top-[118px] max-h-[62dvh] overflow-y-auto rounded-2xl border border-border bg-card/95 backdrop-blur shadow-2xl p-2 space-y-2 sm:absolute sm:left-0 sm:right-auto sm:top-11 sm:w-72 sm:max-h-[70vh]">

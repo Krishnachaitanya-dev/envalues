@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { Plus, Zap, ArrowRight, Workflow, Lock, ExternalLink, MessageSquare, Eye, EyeOff } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -85,19 +85,62 @@ export default function SimpleBuilderPage() {
     }
   }, [fb.createFlow, navigate])
 
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const saveErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => {
+    if (saveErrorTimer.current) clearTimeout(saveErrorTimer.current)
+  }, [])
+
   const handleSave = useCallback(async () => {
     if (!simpleFlow || !user?.id || !editorMeta) return
     setSaving(true)
+    setSaveError(null)
     try {
       const { nodes, edges, triggers } = simpleToGraph(simpleFlow, user.id, editorMeta.nodes)
-      await supabase.from('flow_edges').delete().eq('flow_id', simpleFlow.id)
-      await supabase.from('flow_nodes').delete().eq('flow_id', simpleFlow.id)
-      if (nodes.length > 0) await (supabase.from('flow_nodes') as unknown as { insert: (rows: unknown[]) => Promise<unknown> }).insert(nodes)
-      if (edges.length > 0) await (supabase.from('flow_edges') as unknown as { insert: (rows: unknown[]) => Promise<unknown> }).insert(edges)
-      await supabase.from('flow_triggers').delete().eq('flow_id', simpleFlow.id).eq('trigger_type', 'keyword')
-      if (triggers.length > 0) {
-        await (supabase.from('flow_triggers') as unknown as { insert: (rows: unknown[]) => Promise<unknown> }).insert(triggers)
+      const entryNodeId = nodes.find(node => node.node_type === 'start')?.id ?? null
+
+      const clearEntry = await (supabase.from('flows') as any)
+        .update({ entry_node_id: null })
+        .eq('id', simpleFlow.id)
+      if (clearEntry.error) throw new Error('Could not prepare flow for saving: ' + clearEntry.error.message)
+
+      const clearSessions = await (supabase.from('flow_sessions') as any)
+        .delete()
+        .eq('flow_id', simpleFlow.id)
+      if (clearSessions.error) throw new Error('Could not clear old sessions: ' + clearSessions.error.message)
+
+      const delTriggers = await supabase.from('flow_triggers').delete().eq('flow_id', simpleFlow.id).eq('trigger_type', 'keyword')
+      if (delTriggers.error) throw new Error('Could not clear triggers: ' + delTriggers.error.message)
+
+      const del1 = await supabase.from('flow_edges').delete().eq('flow_id', simpleFlow.id)
+      if (del1.error) throw new Error('Could not clear edges: ' + del1.error.message)
+      const del2 = await supabase.from('flow_nodes').delete().eq('flow_id', simpleFlow.id)
+      if (del2.error) throw new Error('Could not clear nodes: ' + del2.error.message)
+
+      if (nodes.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = await (supabase.from('flow_nodes') as any).insert(nodes)
+        if (r.error) throw new Error('Could not save steps: ' + r.error.message)
       }
+
+      const setEntry = await (supabase.from('flows') as any)
+        .update({ entry_node_id: entryNodeId })
+        .eq('id', simpleFlow.id)
+      if (setEntry.error) throw new Error('Could not set flow entry: ' + setEntry.error.message)
+
+      if (edges.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = await (supabase.from('flow_edges') as any).insert(edges)
+        if (r.error) throw new Error('Could not save connections: ' + r.error.message)
+      }
+
+      if (triggers.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = await (supabase.from('flow_triggers') as any).insert(triggers)
+        if (r.error) throw new Error('Could not save triggers: ' + r.error.message)
+      }
+
       const [nr, er, tr] = await Promise.all([
         supabase.from('flow_nodes').select('*').eq('flow_id', simpleFlow.id),
         supabase.from('flow_edges').select('*').eq('flow_id', simpleFlow.id),
@@ -108,6 +151,11 @@ export default function SimpleBuilderPage() {
         edges: (er.data ?? []) as FlowEdge[],
         triggers: (tr.data ?? []) as FlowTrigger[],
       })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Save failed.'
+      setSaveError(msg)
+      if (saveErrorTimer.current) clearTimeout(saveErrorTimer.current)
+      saveErrorTimer.current = setTimeout(() => setSaveError(null), 5000)
     } finally {
       setSaving(false)
     }
@@ -186,9 +234,25 @@ export default function SimpleBuilderPage() {
             </button>
             <span className="text-muted-foreground/40 shrink-0">|</span>
             <span className="text-sm font-medium truncate">{simpleFlow.name}</span>
+            <span
+              className={[
+                'text-[10px] px-1.5 py-0.5 rounded-full border font-bold uppercase shrink-0',
+                simpleFlow.status === 'published'
+                  ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                  : 'bg-muted text-muted-foreground border-border',
+              ].join(' ')}
+              title={simpleFlow.status === 'published' ? 'This flow can reply to new messages.' : 'This flow will not reply to new messages.'}
+            >
+              {simpleFlow.status === 'published' ? 'LIVE' : 'INACTIVE'}
+            </span>
             {!canSave && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-yellow-500/20 bg-yellow-500/10 text-yellow-400 shrink-0">
                 Add a trigger + step to save
+              </span>
+            )}
+            {saveError && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full border border-destructive/30 bg-destructive/10 text-destructive shrink-0 max-w-[280px] truncate" title={saveError}>
+                Save failed: {saveError}
               </span>
             )}
           </div>
@@ -216,7 +280,7 @@ export default function SimpleBuilderPage() {
           </div>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* Triggers */}
           <div className="w-60 border-r border-border shrink-0 overflow-hidden flex flex-col">
             <TriggerPanel
@@ -226,8 +290,8 @@ export default function SimpleBuilderPage() {
             />
           </div>
 
-          {/* Canvas */}
-          <div className="flex-1 relative overflow-hidden min-w-0">
+          {/* Canvas needs explicit height so React Flow can measure its viewport. */}
+          <div className="flex-1 relative h-full min-h-0 overflow-hidden min-w-0">
             <SimpleCanvas
               flow={simpleFlow}
               selectedStepId={selectedStepId}
@@ -243,6 +307,7 @@ export default function SimpleBuilderPage() {
             <div className="w-[360px] border-l border-border shrink-0 overflow-hidden flex flex-col">
               <StepEditor
                 step={selectedStep}
+                steps={simpleFlow.steps}
                 ownerId={user?.id ?? null}
                 flowId={simpleFlow.id}
                 onChange={handleStepChange}
@@ -342,7 +407,9 @@ function SimpleFlowCard({ name, status, statusColor, keywords, stepCount, onEdit
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-sm truncate">{name}</p>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium capitalize ${statusColor}`}>{status}</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold uppercase ${status === 'published' ? statusColor : 'bg-muted text-muted-foreground border-border'}`}>
+              {status === 'published' ? 'LIVE' : 'INACTIVE'}
+            </span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             {stepCount} step{stepCount !== 1 ? 's' : ''}{keywords.length > 0 && <> · {keywords.slice(0, 3).join(', ')}{keywords.length > 3 ? ` +${keywords.length - 3}` : ''}</>}
@@ -362,7 +429,9 @@ function AdvancedFlowCard({ name, status, statusColor, onOpenAdvanced }: { name:
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-sm truncate">{name}</p>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium capitalize ${statusColor}`}>{status}</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold uppercase ${status === 'published' ? statusColor : 'bg-muted text-muted-foreground border-border'}`}>
+              {status === 'published' ? 'LIVE' : 'INACTIVE'}
+            </span>
             <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-orange-500/20 bg-orange-500/10 text-orange-400 font-medium">Advanced</span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">This conversation uses advanced features. Open in Advanced Builder to edit.</p>

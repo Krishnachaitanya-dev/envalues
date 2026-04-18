@@ -33,15 +33,18 @@ describe('matchesEdge', () => {
   it('equals — exact match', () => {
     expect(matchesEdge(makeEdge({ condition_type: 'equals', condition_value: 'yes' }), session, 'yes')).toBe(true)
     expect(matchesEdge(makeEdge({ condition_type: 'equals', condition_value: 'yes' }), session, 'no')).toBe(false)
+    expect(matchesEdge(makeEdge({ condition_type: 'equals', condition_value: 'Buyer' }), session, ' buyer ')).toBe(true)
   })
 
   it('contains — substring match', () => {
     expect(matchesEdge(makeEdge({ condition_type: 'contains', condition_value: 'ice' }), session, 'i want ice cream')).toBe(true)
+    expect(matchesEdge(makeEdge({ condition_type: 'contains', condition_value: 'Ice' }), session, 'I WANT ICE CREAM')).toBe(true)
     expect(matchesEdge(makeEdge({ condition_type: 'contains', condition_value: 'ice' }), session, 'coffee')).toBe(false)
   })
 
   it('starts_with — prefix match', () => {
     expect(matchesEdge(makeEdge({ condition_type: 'starts_with', condition_value: 'order' }), session, 'order 123')).toBe(true)
+    expect(matchesEdge(makeEdge({ condition_type: 'starts_with', condition_value: 'Order' }), session, ' order 123')).toBe(true)
     expect(matchesEdge(makeEdge({ condition_type: 'starts_with', condition_value: 'order' }), session, 'my order')).toBe(false)
   })
 
