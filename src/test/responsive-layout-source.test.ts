@@ -20,7 +20,7 @@ describe('mobile responsive layout source contract', () => {
     expect(dashboard).toContain("'--sidebar-top': '52px'")
     expect(dashboard).toContain("'--sidebar-height': 'calc(100svh - 52px)'")
     expect(dashboard).toContain("isBuilderCanvas ? 'p-0 overflow-hidden'")
-    expect(dashboard).toContain('{showRightPanel && <RightPanel />}')
+    expect(dashboard).not.toContain('RightPanel')
     expect(sidebar).toContain('h-[var(--sidebar-height)]')
     expect(sidebar).toContain('top-[var(--sidebar-top)]')
     expect(admin).toContain('mobileNavOpen')

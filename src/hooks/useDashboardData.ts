@@ -32,6 +32,7 @@ export function useDashboardData() {
   const [whatsappForm, setWhatsappForm] = useState({ whatsapp_business_number: '', whatsapp_api_token: '', whatsapp_phone_number_id: '' })
   const [showToken, setShowToken] = useState(false)
   const [savingWhatsapp, setSavingWhatsapp] = useState(false)
+  const [flowSummary, setFlowSummary] = useState({ total: 0, published: 0, draft: 0 })
 
   // Enterprise / branding
   const [isEnterprise, setIsEnterprise] = useState(false)
@@ -80,6 +81,21 @@ export function useDashboardData() {
       // Subscriptions are now keyed on owner_id after the flow engine migration.
       const { data: sd } = await supabase.from('subscriptions').select('*').eq('owner_id', user.id).maybeSingle()
       if (sd) setSubscription(sd)
+
+      const { data: flowRows, error: flowError } = await (supabase.from('flows') as any)
+        .select('id, status')
+        .eq('owner_id', user.id)
+        .neq('status', 'archived')
+      if (flowError) {
+        console.error('Flow summary error:', flowError)
+      } else {
+        const rows = flowRows ?? []
+        setFlowSummary({
+          total: rows.length,
+          published: rows.filter((flow: { status?: string }) => flow.status === 'published').length,
+          draft: rows.filter((flow: { status?: string }) => flow.status !== 'published').length,
+        })
+      }
     } catch (err: any) {
       console.error('Error:', err)
       if (err.message !== 'JSON object requested, multiple (or no) rows returned') navigate('/login')
@@ -171,6 +187,9 @@ export function useDashboardData() {
     subscription,
     handleGoLive, handleCancelSubscription, formatAmount,
     hasWhatsappCreds,
+    flowSummary,
+    hasAnyFlow: flowSummary.total > 0,
+    hasPublishedFlow: flowSummary.published > 0,
     isEnterprise, isEnterpriseClient, brand,
 
     // Backward-compat stubs for pages replaced later in Phase 3.

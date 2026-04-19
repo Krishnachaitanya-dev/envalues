@@ -4,10 +4,14 @@ import { useDashboard } from '@/contexts/DashboardContext'
 
 export default function OverviewPage() {
   const navigate = useNavigate()
-  const { ownerData, hasWhatsappCreds, subscription } = useDashboard()
-
-  const checks = [hasWhatsappCreds, !!subscription]
-  const completedChecks = checks.filter(Boolean).length
+  const {
+    ownerData,
+    hasWhatsappCreds,
+    subscription,
+    flowSummary,
+    hasAnyFlow,
+    hasPublishedFlow,
+  } = useDashboard()
 
   const checklist = [
     {
@@ -18,8 +22,12 @@ export default function OverviewPage() {
     },
     {
       label: 'Build your first flow',
-      desc: 'Create nodes and publish a flow',
-      done: false,
+      desc: hasPublishedFlow
+        ? `${flowSummary.published} live flow${flowSummary.published === 1 ? '' : 's'} ready`
+        : hasAnyFlow
+          ? `${flowSummary.total} saved flow${flowSummary.total === 1 ? '' : 's'} created`
+          : 'Create your first WhatsApp flow',
+      done: hasAnyFlow,
       action: () => navigate('/dashboard/builder'),
     },
     {
@@ -29,6 +37,7 @@ export default function OverviewPage() {
       action: undefined as (() => void) | undefined,
     },
   ]
+  const completedChecks = checklist.filter(item => item.done).length
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">

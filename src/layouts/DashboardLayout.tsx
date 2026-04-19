@@ -5,7 +5,6 @@ import { SidebarProvider } from '@/components/ui/sidebar'
 import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
 import { TopBar } from '@/components/dashboard/TopBar'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
-import { RightPanel } from '@/components/dashboard/RightPanel'
 
 function DashboardShell() {
   const { loading } = useDashboard()
@@ -15,9 +14,6 @@ function DashboardShell() {
   const isBuilderCanvas =
     location.pathname.startsWith('/dashboard/builder/') ||
     (location.pathname === '/dashboard/builder' && new URLSearchParams(location.search).has('flow'))
-
-  // WhatsApp preview panel only makes sense on overview + inbox
-  const showRightPanel = location.pathname === '/dashboard' || location.pathname === '/dashboard/inbox'
 
   useEffect(() => {
     const html = document.documentElement
@@ -128,7 +124,6 @@ function DashboardShell() {
               <Outlet />
             </main>
           </div>
-          {showRightPanel && <RightPanel />}
         </div>
       </SidebarProvider>
     </div>
