@@ -17,6 +17,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 const WHATSAPP_API_URL = Deno.env.get('WHATSAPP_API_URL') || 'https://graph.facebook.com/v21.0'
 const WHATSAPP_VERIFY_TOKEN = Deno.env.get('WHATSAPP_VERIFY_TOKEN')!
+const CHOOSER_AFTER_MEDIA_DELAY_MS = 2500
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -145,6 +146,18 @@ async function recordContactMessage(requestId: string, ownerId: string, phone: s
   if (error) console.error(`[${requestId}] record_contact_message error:`, error)
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isMediaMessage(msg: OutboundMessage): boolean {
+  return msg.type === 'image' || msg.type === 'video' || msg.type === 'document'
+}
+
+function isChoiceMessage(msg: OutboundMessage): boolean {
+  return msg.type === 'interactive' || msg.type === 'list'
+}
+
 function buildTurnDeps(
   ownerId: string,
   ownerReceptionPhone: string | null,
@@ -176,7 +189,11 @@ function buildTurnDeps(
     },
 
     enqueueMessages: async (messages, phone) => {
+      let previousWasMedia = false
       for (const msg of messages) {
+        if (previousWasMedia && isChoiceMessage(msg)) {
+          await delay(CHOOSER_AFTER_MEDIA_DELAY_MS)
+        }
         await sendWhatsAppMessage(phone, msg, ownerCreds)
         // Log outbound bot message
         const text = msg.type === 'text'
@@ -185,6 +202,7 @@ function buildTurnDeps(
             ? (msg.body ?? `[${msg.type}]`)
             : `[${msg.type}] ${msg.url ?? ''}`
         await logConversation(requestId, ownerId, phone, 'outbound', text, 'bot')
+        previousWasMedia = isMediaMessage(msg)
       }
     },
 
