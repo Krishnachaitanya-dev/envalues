@@ -128,7 +128,7 @@ export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbou
     let captionApplied = false
     for (const att of validAttachments) {
       const mediaType = normalizeOutboundMediaType(att.type)
-      const shouldApplyCaption = !captionApplied && buttons.length === 0 && !list
+      const shouldApplyCaption = !captionApplied && buttons.length === 0
       const caption = shouldApplyCaption
         ? compactTextParts([textWithLinks, att.caption])
         : att.caption
@@ -141,10 +141,10 @@ export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbou
     }
   }
 
-  if (list && (textWithLinks || validAttachments.length === 0)) {
+  if (list) {
     messages.push({
       type: 'list',
-      body: textWithLinks || 'Please choose an option.',
+      body: validAttachments.length > 0 ? 'Please choose an option.' : textWithLinks || 'Please choose an option.',
       list,
     })
   } else if (textWithLinks && validAttachments.length === 0) {

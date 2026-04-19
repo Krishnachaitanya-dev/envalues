@@ -143,6 +143,44 @@ describe('executeMessageNode', () => {
     }])
   })
 
+  it('keeps list question text with media caption when list menus cannot carry media headers', () => {
+    const node = makeNode('message', {
+      text: 'What are you looking for?',
+      attachments: [{ type: 'image', url: 'https://example.com/project.jpg', caption: 'Project image' }],
+      buttons: [
+        { id: 'btn-1', title: 'Buy Flat' },
+        { id: 'btn-2', title: 'Projects' },
+        { id: 'btn-3', title: 'Site Visit' },
+        { id: 'btn-4', title: 'Price Details' },
+      ],
+    })
+
+    const result = executeMessageNode(node, makeSession(), '')
+
+    expect(result.messages).toEqual([
+      {
+        type: 'image',
+        url: 'https://example.com/project.jpg',
+        caption: 'What are you looking for?\n\nProject image',
+      },
+      {
+        type: 'list',
+        body: 'Please choose an option.',
+        list: {
+          buttonText: 'Choose option',
+          sections: [{
+            rows: [
+              { id: 'btn-1', title: 'Buy Flat' },
+              { id: 'btn-2', title: 'Projects' },
+              { id: 'btn-3', title: 'Site Visit' },
+              { id: 'btn-4', title: 'Price Details' },
+            ],
+          }],
+        },
+      },
+    ])
+  })
+
   it('handles missing text gracefully', () => {
     const node = makeNode('message', {})
     const result = executeMessageNode(node, makeSession(), '')
