@@ -301,6 +301,11 @@ export default function NodeConfigPanel({
               <textarea className={inputCls} rows={6} value={String(config.text ?? '')} onChange={(event) => setField('text', event.target.value)} placeholder="Text to send" />
             </div>
 
+            <div>
+              <label className={labelCls}>Footer</label>
+              <input className={inputCls} maxLength={60} value={String(config.footer ?? '')} onChange={(event) => setField('footer', event.target.value)} placeholder="Optional footer under buttons/list" />
+            </div>
+
             <div className="rounded-2xl border border-border bg-muted/20 p-3 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -467,6 +472,7 @@ export default function NodeConfigPanel({
 
             <UnifiedMessagePreview
               text={String(config.text ?? '')}
+              footer={String(config.footer ?? '')}
               attachments={attachments}
               links={links}
               buttons={quickReplyButtons}
@@ -479,6 +485,10 @@ export default function NodeConfigPanel({
             <div>
               <label className={labelCls}>Prompt</label>
               <textarea className={inputCls} rows={4} value={String(config.prompt ?? '')} onChange={(event) => setField('prompt', event.target.value)} placeholder="Ask the customer a question" />
+            </div>
+            <div>
+              <label className={labelCls}>Footer</label>
+              <input className={inputCls} maxLength={60} value={String(config.footer ?? '')} onChange={(event) => setField('footer', event.target.value)} placeholder="Optional helper text below prompt" />
             </div>
             <div>
               <label className={labelCls}>Variable name</label>
@@ -673,16 +683,18 @@ function AttachmentCard({
 
 function UnifiedMessagePreview({
   text,
+  footer,
   attachments,
   links,
   buttons,
 }: {
   text: string
+  footer: string
   attachments: FlowMediaAttachment[]
   links: FlowMessageLink[]
   buttons: QuickReplyButton[]
 }) {
-  const hasContent = text.trim() || attachments.length > 0 || links.length > 0 || buttons.length > 0
+  const hasContent = text.trim() || footer.trim() || attachments.length > 0 || links.length > 0 || buttons.length > 0
 
   return (
     <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3 space-y-2">
@@ -725,6 +737,10 @@ function UnifiedMessagePreview({
               </div>
             ))}
           </div>
+        )}
+
+        {footer.trim() && (
+          <p className="border-t border-border pt-2 text-[10px] text-muted-foreground">{footer}</p>
         )}
       </div>
 

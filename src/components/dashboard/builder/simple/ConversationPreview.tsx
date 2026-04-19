@@ -7,6 +7,7 @@ interface ChatMsg {
   id: string
   role: 'bot' | 'user'
   text?: string
+  footer?: string
   attachments?: SimpleMedia[]
   buttons?: { id: string; title: string }[]
   listRows?: { id: string; title: string }[]
@@ -55,6 +56,7 @@ export default function ConversationPreview({ flow }: { flow: SimpleFlow }) {
       id: step.id + '-' + Date.now(),
       role: 'bot',
       text: step.text,
+      footer: step.footer,
       attachments: step.attachments,
       buttons: responseMode === 'buttons' ? choices.map(b => ({ id: b.id, title: b.title })) : undefined,
       listRows: responseMode === 'list' ? choices.map(b => ({ id: b.id, title: b.title })) : undefined,
@@ -149,6 +151,9 @@ export default function ConversationPreview({ flow }: { flow: SimpleFlow }) {
                 {msg.attachments && msg.attachments.map(a => <AttachmentBubble key={a.id} media={a} />)}
                 {msg.text && (
                   <div className="bg-[#1f2c33] text-white text-[11px] rounded-lg rounded-tl-none px-3 py-2 whitespace-pre-wrap leading-relaxed">{msg.text}</div>
+                )}
+                {msg.footer && (
+                  <div className="px-3 text-[9px] text-[#8696a0]">{msg.footer}</div>
                 )}
                 {msg.buttons && (
                   <div className="flex flex-col gap-1 mt-1">

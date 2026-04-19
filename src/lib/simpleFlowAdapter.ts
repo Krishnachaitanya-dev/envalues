@@ -94,6 +94,7 @@ export function graphToSimple(
         type: hasButtons ? 'question' : 'message',
         mode: hasButtons ? 'button_choices' : undefined,
         text: cfg.text ?? '',
+        footer: cfg.footer ?? '',
         attachments: attachmentsFromConfig(cfg),
         buttons: hasButtons ? buttons : undefined,
         nextStepId: !hasButtons
@@ -112,6 +113,7 @@ export function graphToSimple(
         type: 'question',
         mode: 'open_text',
         text: cfg.prompt ?? '',
+        footer: cfg.footer ?? '',
         attachments: attachmentsFromConfig(cfg as unknown as AttachmentConfigLike),
         nextStepId: isVisibleSimpleNode(nextViaAlways) ? nextViaAlways.id : null,
       }, fallbackPos)
@@ -245,6 +247,7 @@ export function simpleToGraph(
         label: step.text.slice(0, 40) || 'Question',
         config: {
           prompt: step.text,
+          footer: step.footer?.trim() || undefined,
           variable: varKey,
           store_as: varKey,
           timeout_secs: 300,
@@ -255,6 +258,7 @@ export function simpleToGraph(
     } else {
       const cfg: MessageConfig = {
         text: step.text || undefined,
+        footer: step.footer?.trim() || undefined,
         attachments: (step.attachments ?? []).map(attachmentToConfig),
         buttons: choiceButtons.length > 0 ? choiceButtons.map(b => ({ id: b.id, title: b.title.trim() })) : undefined,
         list_button_text: choiceButtons.length > 3 ? 'Choose option' : undefined,

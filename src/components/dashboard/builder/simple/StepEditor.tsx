@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import {
   Plus, X, Image as ImageIcon, Film, FileText, Youtube, Link2, Upload, Loader2,
+  Bold, Smile,
 } from 'lucide-react'
 import { toast } from '@/components/ui/sonner'
 import type { SimpleStep, SimpleButton, SimpleMedia } from '@/types/simpleFlow'
@@ -29,6 +30,7 @@ interface Props {
 export default function StepEditor({ step, steps = [step], ownerId, flowId, onChange, onDelete }: Props) {
   const update = (patch: Partial<SimpleStep>) => onChange({ ...step, ...patch })
   const fileRef = useRef<HTMLInputElement>(null)
+  const textRef = useRef<HTMLTextAreaElement>(null)
   const [uploading, setUploading] = useState(false)
   const [urlDraft, setUrlDraft] = useState('')
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -40,6 +42,43 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
     : null
   const canAddAttachment = attachments.length < MAX_SIMPLE_ATTACHMENTS
   const targetSteps = steps.filter(s => s.id !== step.id)
+
+  const insertIntoText = (value: string) => {
+    const input = textRef.current
+    const current = step.text ?? ''
+    if (!input) {
+      update({ text: `${current}${value}` })
+      return
+    }
+    const start = input.selectionStart ?? current.length
+    const end = input.selectionEnd ?? current.length
+    const next = `${current.slice(0, start)}${value}${current.slice(end)}`
+    update({ text: next })
+    requestAnimationFrame(() => {
+      input.focus()
+      const cursor = start + value.length
+      input.setSelectionRange(cursor, cursor)
+    })
+  }
+
+  const makeSelectionBold = () => {
+    const input = textRef.current
+    const current = step.text ?? ''
+    if (!input) {
+      update({ text: `${current}*bold text*` })
+      return
+    }
+    const start = input.selectionStart ?? current.length
+    const end = input.selectionEnd ?? current.length
+    const selected = current.slice(start, end) || 'bold text'
+    const wrapped = `*${selected.replace(/^\*|\*$/g, '')}*`
+    const next = `${current.slice(0, start)}${wrapped}${current.slice(end)}`
+    update({ text: next })
+    requestAnimationFrame(() => {
+      input.focus()
+      input.setSelectionRange(start + 1, start + wrapped.length - 1)
+    })
+  }
 
   const addChoice = () => {
     if (choices.length >= MAX_SIMPLE_LIST_OPTIONS) return
@@ -129,6 +168,7 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
           {step.type === 'question' ? 'Question text' : step.type === 'end' ? 'Final message' : 'Message text'}
         </Label>
         <Textarea
+          ref={textRef}
           value={step.text}
           onChange={e => update({ text: e.target.value })}
           placeholder={step.type === 'question'
@@ -139,7 +179,32 @@ export default function StepEditor({ step, steps = [step], ownerId, flowId, onCh
           className="text-sm resize-none min-h-[80px]"
           rows={3}
         />
+        <div className="flex flex-wrap gap-1.5">
+          <Button type="button" size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={makeSelectionBold}>
+            <Bold className="h-3 w-3" /> Bold
+          </Button>
+          {['\u{1F3E1}', '\u{2705}', '\u{1F4DE}', '\u{1F4AC}', '\u{2B50}'].map(emoji => (
+            <Button key={emoji} type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => insertIntoText(emoji)}>
+              <Smile className="h-3 w-3 sr-only" />
+              {emoji}
+            </Button>
+          ))}
+          <span className="self-center text-[10px] text-muted-foreground">WhatsApp bold uses *text*.</span>
+        </div>
       </div>
+
+      {(step.type === 'message' || step.type === 'question') && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Footer <span className="text-muted-foreground">(optional)</span></Label>
+          <Input
+            value={step.footer ?? ''}
+            onChange={e => update({ footer: e.target.value.slice(0, 60) })}
+            placeholder="Example: EnValues team"
+            className="text-sm h-8"
+          />
+          <p className="text-[10px] text-muted-foreground">Shown under WhatsApp buttons/list menus. For plain text, it is added below the message.</p>
+        </div>
+      )}
 
       {(step.type === 'message' || step.type === 'question') ? (
         <div className="space-y-2">

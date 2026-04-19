@@ -28,6 +28,7 @@ export interface SimpleStep {
   type: SimpleStepType
   mode?: SimpleQuestionMode
   text: string
+  footer?: string
   attachments?: SimpleMedia[]
   buttons?: SimpleButton[]
   nextStepId?: string | null

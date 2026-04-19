@@ -97,6 +97,7 @@ export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbou
   const list = buildListMenu(choices, config.list_button_text)
   const linkText = buildLinkText(config.links)
   const textWithLinks = compactTextParts([config.text, linkText])
+  const footer = typeof config.footer === 'string' ? config.footer.trim() : ''
   const validAttachments = attachments.filter((att) => att.url)
 
   // WhatsApp button messages can carry one media header. Use that when quick
@@ -107,6 +108,7 @@ export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbou
     messages.push({
       type: 'interactive',
       body: compactTextParts([textWithLinks, firstAttachment.caption]) || 'Please choose an option.',
+      footer: footer || undefined,
       buttons,
       header: {
         type: firstType,
@@ -130,7 +132,7 @@ export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbou
       const mediaType = normalizeOutboundMediaType(att.type)
       const shouldApplyCaption = !captionApplied && buttons.length === 0
       const caption = shouldApplyCaption
-        ? compactTextParts([textWithLinks, att.caption])
+        ? compactTextParts([textWithLinks, att.caption, footer])
         : att.caption
       captionApplied = true
       messages.push({
@@ -145,6 +147,7 @@ export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbou
     messages.push({
       type: 'list',
       body: validAttachments.length > 0 ? 'Please choose an option.' : textWithLinks || 'Please choose an option.',
+      footer: footer || undefined,
       list,
     })
   } else if (textWithLinks && validAttachments.length === 0) {
@@ -152,12 +155,13 @@ export function executeMessageNode(node: FlowNode, _session: FlowSession, _inbou
       messages.push({
         type: 'interactive',
         body: textWithLinks,
+        footer: footer || undefined,
         buttons,
       })
     } else {
       messages.push({
         type: 'text',
-        text: textWithLinks,
+        text: compactTextParts([textWithLinks, footer]),
         ...(containsUrl(textWithLinks) ? { preview_url: true } : {}),
       })
     }

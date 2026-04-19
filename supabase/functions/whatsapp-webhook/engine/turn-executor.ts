@@ -24,6 +24,8 @@ export interface TurnDeps {
 
 const TURN_TIMEOUT_MS = 3000
 const INPUT_PROMPTED_CONTEXT_KEY = '__input_prompted_at'
+const INPUT_PENDING_CONTEXT_KEY = '__input_pending_at'
+const LAST_CHOICE_NODE_CONTEXT_KEY = '__last_choice_node_id'
 
 type OutboundMediaType = Extract<OutboundMessage['type'], 'image' | 'video' | 'document'>
 
@@ -41,6 +43,7 @@ function normalizeOutboundMediaType(type: unknown): OutboundMediaType {
 function inputPromptMessages(node: FlowNode): OutboundMessage[] {
   const config = node.config as unknown as InputConfig
   const prompt = typeof config.prompt === 'string' ? config.prompt.trim() : ''
+  const footer = typeof config.footer === 'string' ? config.footer.trim() : ''
   const attachments = Array.isArray(config.attachments) && config.attachments.length > 0
     ? config.attachments
     : config.media_url
@@ -49,7 +52,8 @@ function inputPromptMessages(node: FlowNode): OutboundMessage[] {
   const validAttachments = attachments.filter((att) => att.url)
 
   if (validAttachments.length === 0) {
-    return prompt ? [{ type: 'text', text: prompt }] : []
+    const text = compactTextParts([prompt, footer])
+    return text ? [{ type: 'text', text }] : []
   }
 
   let promptApplied = false
@@ -60,7 +64,7 @@ function inputPromptMessages(node: FlowNode): OutboundMessage[] {
     return {
       type: mediaType,
       url: att.url,
-      caption: shouldApplyPrompt ? compactTextParts([prompt, att.caption]) || undefined : att.caption,
+      caption: shouldApplyPrompt ? compactTextParts([prompt, att.caption, footer]) || undefined : att.caption,
     }
   })
 }
@@ -92,6 +96,21 @@ export async function executeTurn(session: FlowSession, inbound: string, deps: T
     return
   }
 
+  const lastChoiceNodeId = session.context[LAST_CHOICE_NODE_CONTEXT_KEY] as string | undefined
+  if (remainingInbound && lastChoiceNodeId && lastChoiceNodeId !== currentNode.id) {
+    const lastChoiceEdges = (await deps.getOutgoingEdges(lastChoiceNodeId))
+      .filter(edge => !edge.is_fallback && edge.condition_type !== 'always')
+    const correctedNextId = evaluateEdges(lastChoiceEdges, session, remainingInbound, deps.evalExpression)
+    if (correctedNextId) {
+      const lastChoiceNode = await deps.getNode(lastChoiceNodeId)
+      if (lastChoiceNode) {
+        session.current_node_id = lastChoiceNodeId
+        session.context = { ...session.context, [INPUT_PENDING_CONTEXT_KEY]: lastChoiceNodeId }
+        currentNode = lastChoiceNode
+      }
+    }
+  }
+
   while (session.step_count < session.max_steps) {
 
     // Safety: per-turn timeout
@@ -115,11 +134,11 @@ export async function executeTurn(session: FlowSession, inbound: string, deps: T
 
     // If we paused here waiting for a button reply, skip re-executing this node
     // and go straight to edge evaluation with the new inbound text
-    const inputPendingAt = session.context['__input_pending_at'] as string | undefined
+    const inputPendingAt = session.context[INPUT_PENDING_CONTEXT_KEY] as string | undefined
     const skipExecution = inputPendingAt === currentNode.id
     if (skipExecution) {
       const ctx = { ...session.context }
-      delete ctx['__input_pending_at']
+      delete ctx[INPUT_PENDING_CONTEXT_KEY]
       session.context = ctx
     }
 
@@ -191,7 +210,11 @@ export async function executeTurn(session: FlowSession, inbound: string, deps: T
         .filter(e => !e.is_fallback)
         .some(e => e.condition_type !== 'always')
       if (hasConditionalEdges) {
-        session.context = { ...session.context, __input_pending_at: currentNode.id }
+        session.context = {
+          ...session.context,
+          [INPUT_PENDING_CONTEXT_KEY]: currentNode.id,
+          [LAST_CHOICE_NODE_CONTEXT_KEY]: currentNode.id,
+        }
         session.current_node_id = currentNode.id
         await deps.saveSession(session)
         return

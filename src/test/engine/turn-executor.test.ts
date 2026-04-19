@@ -271,6 +271,37 @@ describe('executeTurn', () => {
     expect(deps.killedSessions).toHaveLength(0)
   })
 
+  it('routes a corrected old menu tap from the last choice node', async () => {
+    const nodes = [
+      makeNode('n_menu', 'message', {
+        text: 'Choose path',
+        buttons: [
+          { id: 'buyer', title: 'Buyer' },
+          { id: 'seller', title: 'Seller' },
+        ],
+      }),
+      makeNode('n_buyer_input', 'input', { prompt: 'Buyer details?', store_as: 'buyer_details', timeout_secs: 30 }),
+      makeNode('n_seller_msg', 'message', { text: 'Seller path' }),
+      makeNode('n_end', 'end', {}),
+    ]
+    const edges = [
+      makeEdge('n_menu', 'n_buyer_input', 'equals', 'Buyer'),
+      makeEdge('n_menu', 'n_seller_msg', 'equals', 'Seller'),
+      makeEdge('n_seller_msg', 'n_end'),
+    ]
+    const deps = makeDeps(nodes, edges)
+    const session = makeSession({
+      current_node_id: 'n_buyer_input',
+      context: { __last_choice_node_id: 'n_menu', __input_prompted_at: 'n_buyer_input' },
+    })
+
+    await executeTurn(session, 'Seller', deps)
+
+    expect(session.context.buyer_details).toBeUndefined()
+    expect(deps.sentMessages).toContain('Seller path')
+    expect(deps.closedSessions).toContain('s1')
+  })
+
   it('state is persisted before messages are sent (state-first guarantee)', async () => {
     const calls: string[] = []
     const nodes = [

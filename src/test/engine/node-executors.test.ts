@@ -76,6 +76,43 @@ describe('executeMessageNode', () => {
     }])
   })
 
+  it('adds footer to text, buttons, and list messages', () => {
+    expect(executeMessageNode(makeNode('message', {
+      text: 'Plain',
+      footer: 'EnValues team',
+    }), makeSession(), '').messages).toEqual([
+      { type: 'text', text: 'Plain\n\nEnValues team' },
+    ])
+
+    expect(executeMessageNode(makeNode('message', {
+      text: 'Pick one',
+      footer: 'EnValues team',
+      buttons: [{ id: 'a', title: 'A' }],
+    }), makeSession(), '').messages).toEqual([
+      {
+        type: 'interactive',
+        body: 'Pick one',
+        footer: 'EnValues team',
+        buttons: [{ id: 'a', title: 'A' }],
+      },
+    ])
+
+    expect(executeMessageNode(makeNode('message', {
+      text: 'Pick many',
+      footer: 'EnValues team',
+      buttons: [
+        { id: 'a', title: 'A' },
+        { id: 'b', title: 'B' },
+        { id: 'c', title: 'C' },
+        { id: 'd', title: 'D' },
+      ],
+    }), makeSession(), '').messages[0]).toMatchObject({
+      type: 'list',
+      body: 'Pick many',
+      footer: 'EnValues team',
+    })
+  })
+
   it('returns a list message when more than three choices are configured', () => {
     const node = makeNode('message', {
       text: 'What are you looking for?',

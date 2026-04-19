@@ -84,6 +84,7 @@ export interface OutboundMessage {
   url?: string
   caption?: string
   body?: string
+  footer?: string
   buttons?: Array<{ id: string; title: string }>
   header?: OutboundMediaHeader
   list?: OutboundListMenu
@@ -101,6 +102,7 @@ export interface NodeResult {
 
 export interface MessageConfig {
   text?: string
+  footer?: string
   attachments?: Array<{ type: string; url: string; caption?: string; storage_path?: string; source?: string }>
   links?: Array<{ id?: string; url: string; label?: string }>
   media_url?: string
@@ -111,6 +113,7 @@ export interface MessageConfig {
 
 export interface InputConfig {
   prompt: string
+  footer?: string
   store_as: string
   timeout_secs: number
   attachments?: Array<{ type: string; url: string; caption?: string; storage_path?: string; source?: string }>

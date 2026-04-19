@@ -209,6 +209,12 @@ export function buildMessageConfigForSave(
   if (normalizedButtons.length > 0) next.buttons = normalizedButtons
   else delete next.buttons
 
+  if (typeof next.footer === 'string') {
+    const footer = next.footer.trim()
+    if (footer) next.footer = footer
+    else delete next.footer
+  }
+
   return next
 }
 

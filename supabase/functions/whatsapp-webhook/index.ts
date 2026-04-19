@@ -266,6 +266,7 @@ async function sendWhatsAppMessage(to: string, msg: OutboundMessage, creds: { ac
         })),
       },
     }
+    if (msg.footer) interactive.footer = { text: msg.footer }
 
     if (msg.header?.url) {
       const headerMedia: Record<string, unknown> = { link: msg.header.url }
@@ -291,6 +292,7 @@ async function sendWhatsAppMessage(to: string, msg: OutboundMessage, creds: { ac
     const interactive: Record<string, unknown> = {
       type: 'list',
       body: { text: msg.body ?? 'Please choose an option.' },
+      ...(msg.footer ? { footer: { text: msg.footer } } : {}),
       action: {
         button: list?.buttonText ?? 'Choose option',
         sections: (list?.sections ?? [{ rows }]).map((section, sectionIndex) => ({
@@ -392,11 +394,11 @@ async function receiveMessage(
     return
   }
 
-  // 6. Restart trigger check (runs even if session active)
-  const restart = findRestartTrigger(triggers, text)
-  if (restart) {
+  // 6. Keyword interrupt/restart check (runs even if session active)
+  const interrupt = session?.status === 'active' ? resolveTrigger(triggers, text) : findRestartTrigger(triggers, text)
+  if (interrupt && interrupt.trigger_type !== 'default' && (interrupt.trigger_type === 'restart' || interrupt.flow_id !== session?.flow_id || interrupt.target_node_id)) {
     if (session) await expireSession(session.id)
-    const newSession = await createSession(ownerId, phone, restart)
+    const newSession = await createSession(ownerId, phone, interrupt)
     const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds, requestId)
     await executeTurn(newSession, text, deps)
     return

@@ -73,6 +73,7 @@ export interface FlowTrigger {
 export interface StartConfig   { greeting_message?: string }
 export interface MessageConfig {
   text?: string
+  footer?: string
   attachments?: Array<{
     id?: string
     type: 'image' | 'video' | 'document'
@@ -89,6 +90,7 @@ export interface MessageConfig {
 }
 export interface InputConfig   {
   prompt: string
+  footer?: string
   variable?: string
   store_as?: string
   timeout_seconds?: number
