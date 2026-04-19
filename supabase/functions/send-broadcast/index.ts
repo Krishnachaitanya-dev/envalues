@@ -1,15 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { decryptToken, getCorsHeaders, markAccountReauthRequired, resolveTenantAccountByOwnerId } from '../_shared/whatsapp.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 const WHATSAPP_API_URL = Deno.env.get('WHATSAPP_API_URL') || 'https://graph.facebook.com/v21.0'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+const corsHeaders = getCorsHeaders()
 
 const BATCH_SIZE = 50
 const BATCH_DELAY_MS = 650
@@ -46,7 +44,7 @@ async function sendTemplateMessage(
   params: string[] | null,
   accessToken: string,
   phoneNumberId: string
-): Promise<{ success: boolean; waMessageId?: string; errorDetail?: string }> {
+): Promise<{ success: boolean; waMessageId?: string; errorDetail?: string; status?: number }> {
   try {
     const res = await fetch(`${WHATSAPP_API_URL}/${phoneNumberId}/messages`, {
       method: 'POST',
@@ -60,9 +58,9 @@ async function sendTemplateMessage(
     const errBody = await res.text()
     let errorDetail = `HTTP ${res.status}`
     try { errorDetail = JSON.parse(errBody)?.error?.message ?? errorDetail } catch { /* keep */ }
-    return { success: false, errorDetail }
+    return { success: false, errorDetail, status: res.status }
   } catch (err: any) {
-    return { success: false, errorDetail: err?.message ?? 'Network error' }
+    return { success: false, errorDetail: err?.message ?? 'Network error', status: 0 }
   }
 }
 
@@ -89,11 +87,16 @@ serve(async (req) => {
     if (campErr || !campaign) return new Response(JSON.stringify({ error: 'Campaign not found' }), { status: 403, headers: corsHeaders })
     if (campaign.status !== 'draft') return new Response(JSON.stringify({ error: `Campaign is already ${campaign.status}` }), { status: 409, headers: corsHeaders })
 
-    const { data: owner } = await supabase.from('owners').select('whatsapp_api_token, whatsapp_phone_number_id').eq('id', user.id).single()
-    if (!(owner as any)?.whatsapp_api_token) return new Response(JSON.stringify({ error: 'WhatsApp credentials not configured' }), { status: 400, headers: corsHeaders })
+    const account = await resolveTenantAccountByOwnerId(supabase, user.id)
+    if (!account) return new Response(JSON.stringify({ error: 'WhatsApp credentials not configured' }), { status: 400, headers: corsHeaders })
+    if (!account.sendingEnabled) return new Response(JSON.stringify({ error: 'Sending is disabled for this account' }), { status: 409, headers: corsHeaders })
+    if (account.throttled) return new Response(JSON.stringify({ error: 'Account is throttled. Try later.' }), { status: 429, headers: corsHeaders })
+    if (['reauth_required', 'revoked', 'expired'].includes(account.status)) {
+      return new Response(JSON.stringify({ error: `WhatsApp account status is ${account.status}. Reconnect required.` }), { status: 409, headers: corsHeaders })
+    }
 
-    const phoneNumberId = (owner as any).whatsapp_phone_number_id || Deno.env.get('WHATSAPP_PHONE_NUMBER_ID') || ''
-    if (!phoneNumberId) return new Response(JSON.stringify({ error: 'WHATSAPP_PHONE_NUMBER_ID not configured' }), { status: 500, headers: corsHeaders })
+    const accessToken = await decryptToken(account.tokenCiphertext, account.tokenKeyVersion)
+    const phoneNumberId = account.phoneNumberId
 
     // Resolve phones
     let phones: string[] = []
@@ -139,11 +142,18 @@ serve(async (req) => {
       const batch = uniquePhones.slice(batchStart, batchStart + BATCH_SIZE)
 
       await Promise.all(batch.map(async (phone) => {
-        const result = await sendTemplateMessage(phone, templateName, languageCode, params, (owner as any).whatsapp_api_token, phoneNumberId)
+        const result = await sendTemplateMessage(phone, templateName, languageCode, params, accessToken, phoneNumberId)
         if (result.success) {
           sentCount++
           await (supabase.from('broadcast_recipients') as any).update({ status: 'sent', wa_message_id: result.waMessageId ?? null, sent_at: new Date().toISOString() }).eq('campaign_id', campaign_id).eq('phone', phone)
         } else {
+          if (result.status === 401 || result.status === 403) {
+            await markAccountReauthRequired(supabase, {
+              ownerId: account.ownerId,
+              accountId: account.accountId,
+              reason: result.errorDetail ?? 'Meta rejected token',
+            })
+          }
           failedCount++
           await (supabase.from('broadcast_recipients') as any).update({ status: 'failed', error_detail: result.errorDetail ?? 'Unknown error' }).eq('campaign_id', campaign_id).eq('phone', phone)
         }

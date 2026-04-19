@@ -33,6 +33,7 @@ export function useDashboardData() {
   const [showToken, setShowToken] = useState(false)
   const [savingWhatsapp, setSavingWhatsapp] = useState(false)
   const [flowSummary, setFlowSummary] = useState({ total: 0, published: 0, draft: 0 })
+  const [whatsappAccount, setWhatsappAccount] = useState<any>(null)
 
   // Enterprise / branding
   const [isEnterprise, setIsEnterprise] = useState(false)
@@ -68,6 +69,12 @@ export function useDashboardData() {
       if (oe) throw oe
       setOwnerData(od)
       setWhatsappForm({ whatsapp_business_number: od.whatsapp_business_number || '', whatsapp_api_token: od.whatsapp_api_token || '', whatsapp_phone_number_id: od.whatsapp_phone_number_id ?? '' })
+
+      const { data: waAccount } = await (supabase.from('whatsapp_accounts') as any)
+        .select('id, owner_id, status, phone_number_id, business_number, quality_rating, messaging_limit_tier, token_last_verified_at, disconnect_reason, sending_enabled, throttled, daily_send_cap, burst_per_minute_cap, plan_message_limit, updated_at')
+        .eq('owner_id', user.id)
+        .maybeSingle()
+      setWhatsappAccount(waAccount ?? null)
 
       if (od.plan_type === 'enterprise') {
         setIsEnterprise(true)
@@ -118,6 +125,35 @@ export function useDashboardData() {
       }).eq('id', user.id)
       if (error) throw error
       setOwnerData({ ...ownerData, ...whatsappForm })
+
+      const status = validated.whatsapp_api_token && validated.whatsapp_phone_number_id ? 'active' : 'disconnected'
+      const nowIso = new Date().toISOString()
+      const { error: waError } = await (supabase.from('whatsapp_accounts') as any).upsert({
+        owner_id: user.id,
+        status,
+        business_number: validated.whatsapp_business_number,
+        phone_number_id: validated.whatsapp_phone_number_id,
+        token_ciphertext: validated.whatsapp_api_token,
+        token_key_version: 'legacy_plaintext',
+        connected_at: status === 'active' ? nowIso : null,
+        token_last_verified_at: status === 'active' ? nowIso : null,
+        sending_enabled: true,
+        throttled: false,
+        updated_at: nowIso,
+      }, { onConflict: 'owner_id' })
+      if (waError) throw waError
+      setWhatsappAccount((prev: any) => ({
+        ...(prev ?? {}),
+        owner_id: user.id,
+        status,
+        business_number: validated.whatsapp_business_number,
+        phone_number_id: validated.whatsapp_phone_number_id,
+        token_last_verified_at: status === 'active' ? nowIso : null,
+        sending_enabled: true,
+        throttled: false,
+        updated_at: nowIso,
+      }))
+
       await supabase.from('audit_logs').insert({ owner_id: user.id, action: 'whatsapp_credentials_updated', resource_type: 'owner', resource_id: user.id, metadata: { whatsapp_business_number: validated.whatsapp_business_number } })
       toast({ title: 'WhatsApp configuration saved!' })
     } catch (err: any) {
@@ -170,7 +206,9 @@ export function useDashboardData() {
   }
 
   const formatAmount = (amountInPaise: number) => `Rs.${Math.round(amountInPaise / 100)}`
-  const hasWhatsappCreds = !!(ownerData?.whatsapp_business_number?.trim() && ownerData?.whatsapp_api_token?.trim() && ownerData?.whatsapp_phone_number_id?.trim())
+  const hasLegacyWhatsappCreds = !!(ownerData?.whatsapp_business_number?.trim() && ownerData?.whatsapp_api_token?.trim() && ownerData?.whatsapp_phone_number_id?.trim())
+  const whatsappConnectionStatus = whatsappAccount?.status || (hasLegacyWhatsappCreds ? 'active' : 'disconnected')
+  const hasWhatsappCreds = whatsappConnectionStatus === 'active'
 
   const handleGoLive = async () => null
   const handleAddMainQuestion = async (e: React.FormEvent) => { e.preventDefault(); return false }
@@ -187,6 +225,8 @@ export function useDashboardData() {
     subscription,
     handleGoLive, handleCancelSubscription, formatAmount,
     hasWhatsappCreds,
+    whatsappAccount,
+    whatsappConnectionStatus,
     flowSummary,
     hasAnyFlow: flowSummary.total > 0,
     hasPublishedFlow: flowSummary.published > 0,

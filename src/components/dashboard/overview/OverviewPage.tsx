@@ -7,6 +7,7 @@ export default function OverviewPage() {
   const {
     ownerData,
     hasWhatsappCreds,
+    whatsappConnectionStatus,
     subscription,
     flowSummary,
     hasAnyFlow,
@@ -16,7 +17,11 @@ export default function OverviewPage() {
   const checklist = [
     {
       label: 'Connect WhatsApp',
-      desc: 'Add phone number & access token',
+      desc: whatsappConnectionStatus === 'reauth_required'
+        ? 'Reconnect required (token expired/revoked)'
+        : whatsappConnectionStatus === 'active'
+          ? 'Connected and ready'
+          : 'Add phone number & access token',
       done: hasWhatsappCreds,
       action: () => navigate('/dashboard/settings'),
     },

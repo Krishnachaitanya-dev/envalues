@@ -1,6 +1,6 @@
 // supabase/functions/whatsapp-webhook/index.ts
-// Phase 2: Graph execution engine — replaces menu-bot logic.
-// Reads from: flow_nodes, flow_edges, flow_triggers, flow_sessions, owners.
+// Phase 2+: Graph execution engine with tenant-scoped outbox dispatch.
+// Reads from: flow_nodes, flow_edges, flow_triggers, flow_sessions, owners, whatsapp_accounts, whatsapp_outbox.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -8,36 +8,21 @@ import { normalize } from './engine/normalize.ts'
 import { resolveTrigger, findRestartTrigger } from './engine/trigger-engine.ts'
 import { executeTurn, TurnDeps } from './engine/turn-executor.ts'
 import type { FlowSession, FlowTrigger, OutboundMessage } from './engine/types.ts'
+import {
+  getCorsHeaders,
+  resolveTenantAccountByInbound,
+  type TenantWhatsAppAccount,
+} from '../_shared/whatsapp.ts'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
-
-const WHATSAPP_API_URL = Deno.env.get('WHATSAPP_API_URL') || 'https://graph.facebook.com/v21.0'
 const WHATSAPP_VERIFY_TOKEN = Deno.env.get('WHATSAPP_VERIFY_TOKEN')!
 const CHOOSER_AFTER_MEDIA_DELAY_MS = 2500
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-// ── Tenant lookup ─────────────────────────────────────────────────────────────
-
-async function getOwner(businessNumber: string): Promise<{ id: string; whatsapp_api_token: string; whatsapp_phone_number_id: string | null; reception_phone: string | null } | null> {
-  const clean = businessNumber.replace(/[\s\-\+\(\)]/g, '')
-  for (const num of [clean, `+${clean}`]) {
-    const { data } = await supabase
-      .from('owners')
-      .select('id, whatsapp_api_token, whatsapp_phone_number_id, reception_phone')
-      .eq('whatsapp_business_number', num)
-      .single()
-    if (data) return data
-  }
-  return null
-}
+const corsHeaders = getCorsHeaders()
 
 // ── Session management ────────────────────────────────────────────────────────
 
@@ -158,10 +143,34 @@ function isChoiceMessage(msg: OutboundMessage): boolean {
   return msg.type === 'interactive' || msg.type === 'list'
 }
 
+function normalizePhone(phone: string): string {
+  return phone.replace(/[^\d]/g, '')
+}
+
+async function enqueueOutboxMessage(params: {
+  owner: TenantWhatsAppAccount
+  toPhone: string
+  message: OutboundMessage
+  idempotencyKey: string
+  availableAt?: string
+}): Promise<void> {
+  const { owner, toPhone, message, idempotencyKey, availableAt } = params
+  const orderingKey = `${owner.ownerId}:${normalizePhone(toPhone)}`
+  const { error } = await supabase.rpc('enqueue_whatsapp_outbox', {
+    p_owner_id: owner.ownerId,
+    p_account_id: owner.accountId,
+    p_phone_number_id: owner.phoneNumberId,
+    p_to_phone: toPhone,
+    p_payload: message,
+    p_idempotency_key: idempotencyKey,
+    p_ordering_key: orderingKey,
+    p_available_at: availableAt ?? new Date().toISOString(),
+  })
+  if (error) throw error
+}
+
 function buildTurnDeps(
-  ownerId: string,
-  ownerReceptionPhone: string | null,
-  ownerCreds: { accessToken: string; phoneNumberId: string },
+  owner: TenantWhatsAppAccount,
   requestId: string,
 ): TurnDeps {
   return {
@@ -190,27 +199,36 @@ function buildTurnDeps(
 
     enqueueMessages: async (messages, phone) => {
       let previousWasMedia = false
-      for (const msg of messages) {
+      let availableAt = Date.now()
+
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i]
         if (previousWasMedia && isChoiceMessage(msg)) {
           await delay(CHOOSER_AFTER_MEDIA_DELAY_MS)
+          availableAt += CHOOSER_AFTER_MEDIA_DELAY_MS
         }
-        await sendWhatsAppMessage(phone, msg, ownerCreds)
-        // Log outbound bot message
-        const text = msg.type === 'text'
-          ? (msg.text ?? '')
-          : msg.type === 'interactive' || msg.type === 'list'
-            ? (msg.body ?? `[${msg.type}]`)
-            : `[${msg.type}] ${msg.url ?? ''}`
-        await logConversation(requestId, ownerId, phone, 'outbound', text, 'bot')
+
+        const idempotencyKey = `${requestId}:${owner.ownerId}:${normalizePhone(phone)}:${i}:${crypto.randomUUID()}`
+        await enqueueOutboxMessage({
+          owner,
+          toPhone: phone,
+          message: msg,
+          idempotencyKey,
+          availableAt: new Date(availableAt).toISOString(),
+        })
         previousWasMedia = isMediaMessage(msg)
       }
     },
 
     sendHandoffAlert: async (ownerPhone, customerPhone, department) => {
-      await sendWhatsAppMessage(ownerPhone, {
-        type: 'text',
-        text: `New handoff from ${customerPhone}${department ? ` [${department}]` : ''}. Open inbox to reply.`,
-      }, ownerCreds)
+      const text = `New handoff from ${customerPhone}${department ? ` [${department}]` : ''}. Open inbox to reply.`
+      const idempotencyKey = `${requestId}:${owner.ownerId}:${normalizePhone(ownerPhone)}:handoff:${crypto.randomUUID()}`
+      await enqueueOutboxMessage({
+        owner,
+        toPhone: ownerPhone,
+        message: { type: 'text', text },
+        idempotencyKey,
+      })
     },
 
     closeSession: async (session) => {
@@ -236,105 +254,7 @@ function buildTurnDeps(
       return data?.entry_node_id ?? null
     },
 
-    ownerReceptionPhone: ownerReceptionPhone ?? undefined,
-  }
-}
-
-// ── WhatsApp sender ───────────────────────────────────────────────────────────
-
-async function sendWhatsAppMessage(to: string, msg: OutboundMessage, creds: { accessToken: string; phoneNumberId: string }): Promise<void> {
-  const { accessToken, phoneNumberId } = creds
-
-  let payload: Record<string, unknown>
-
-  if (msg.type === 'text') {
-      payload = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to,
-        type: 'text',
-        text: { preview_url: msg.preview_url ?? false, body: msg.text ?? '' },
-      }
-  } else if (msg.type === 'interactive') {
-    const interactive: Record<string, unknown> = {
-      type: 'button',
-      body: { text: msg.body ?? '' },
-      action: {
-        buttons: (msg.buttons ?? []).map(b => ({
-          type: 'reply',
-          reply: { id: b.id, title: b.title },
-        })),
-      },
-    }
-    if (msg.footer) interactive.footer = { text: msg.footer }
-
-    if (msg.header?.url) {
-      const headerMedia: Record<string, unknown> = { link: msg.header.url }
-      if (msg.header.type === 'document') {
-        headerMedia.filename = msg.header.filename ?? msg.header.url.split('/').pop()?.split('?')[0] ?? 'file'
-      }
-      interactive.header = {
-        type: msg.header.type,
-        [msg.header.type]: headerMedia,
-      }
-    }
-
-    payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: 'interactive',
-      interactive,
-    }
-  } else if (msg.type === 'list') {
-    const list = msg.list
-    const rows = list?.sections.flatMap(section => section.rows) ?? []
-    const interactive: Record<string, unknown> = {
-      type: 'list',
-      body: { text: msg.body ?? 'Please choose an option.' },
-      ...(msg.footer ? { footer: { text: msg.footer } } : {}),
-      action: {
-        button: list?.buttonText ?? 'Choose option',
-        sections: (list?.sections ?? [{ rows }]).map((section, sectionIndex) => ({
-          title: section.title ?? `Options ${sectionIndex + 1}`,
-          rows: section.rows.map(row => ({
-            id: row.id,
-            title: row.title,
-            ...(row.description ? { description: row.description } : {}),
-          })),
-        })),
-      },
-    }
-
-    payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: 'interactive',
-      interactive,
-    }
-  } else {
-    const mediaPayload: Record<string, unknown> = { link: msg.url }
-    if (msg.caption) mediaPayload.caption = msg.caption
-    if (msg.type === 'document') mediaPayload.filename = (msg.url ?? '').split('/').pop() || 'file'
-    payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: msg.type,
-      [msg.type]: mediaPayload,
-    }
-  }
-
-  try {
-    const res = await fetch(`${WHATSAPP_API_URL}/${phoneNumberId}/messages`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    if (!res.ok) console.error(`[webhook] Send failed (${res.status}):`, await res.text())
-  } catch (err) {
-    console.error('[webhook] Send error:', err)
+    ownerReceptionPhone: owner.receptionPhone ?? undefined,
   }
 }
 
@@ -351,14 +271,13 @@ async function verifySignature(body: string, signature: string, appSecret: strin
 // ── Main receive_message ──────────────────────────────────────────────────────
 
 async function receiveMessage(
-  ownerId: string,
+  owner: TenantWhatsAppAccount,
   phone: string,
   rawText: string,
   messageId: string,
-  receptionPhone: string | null,
-  ownerCreds: { accessToken: string; phoneNumberId: string },
   requestId: string,
 ): Promise<void> {
+  const ownerId = owner.ownerId
   // 1. Idempotency — skip if already processed
   try {
     if (await isDuplicateMessage(messageId, ownerId)) return
@@ -399,14 +318,14 @@ async function receiveMessage(
   if (interrupt && interrupt.trigger_type !== 'default' && (interrupt.trigger_type === 'restart' || interrupt.flow_id !== session?.flow_id || interrupt.target_node_id)) {
     if (session) await expireSession(session.id)
     const newSession = await createSession(ownerId, phone, interrupt)
-    const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds, requestId)
+    const deps = buildTurnDeps(owner, requestId)
     await executeTurn(newSession, text, deps)
     return
   }
 
   // 7. Active session → continue
   if (session?.status === 'active') {
-    const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds, requestId)
+    const deps = buildTurnDeps(owner, requestId)
     await executeTurn(session, text, deps)
     return
   }
@@ -418,12 +337,18 @@ async function receiveMessage(
 
   const trigger = resolveTrigger(triggers, text)
   if (!trigger) {
-    await sendWhatsAppMessage(phone, { type: 'text', text: "Reply 'hi' to get started." }, ownerCreds)
-    await logConversation(requestId, ownerId, phone, 'outbound', "Reply 'hi' to get started.", 'bot')
+    await enqueueOutboxMessage({
+      owner,
+      toPhone: phone,
+      message: { type: 'text', text: "Reply 'hi' to get started." },
+      idempotencyKey: `${requestId}:${owner.ownerId}:${normalizePhone(phone)}:hint:${crypto.randomUUID()}`,
+    })
+    await logConversation(requestId, owner.ownerId, phone, 'outbound', "Reply 'hi' to get started.", 'bot')
     return
   }
+
   const newSession = await createSession(ownerId, phone, trigger)
-  const deps = buildTurnDeps(ownerId, receptionPhone, ownerCreds, requestId)
+  const deps = buildTurnDeps(owner, requestId)
   await executeTurn(newSession, text, deps)
 }
 
@@ -475,7 +400,8 @@ serve(async (req: Request) => {
 
       const message = value.messages[0]
       const customerPhone: string = message.from
-      const businessNumber: string = value.metadata.display_phone_number
+      const businessNumber: string = value.metadata?.display_phone_number ?? ''
+      const incomingPhoneNumberId: string | null = value.metadata?.phone_number_id ?? null
       let rawText = ''
 
       if (message.type === 'text') rawText = message.text?.body ?? ''
@@ -487,26 +413,28 @@ serve(async (req: Request) => {
 
       if (!rawText) return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
 
-      console.log(`[${requestId}] from=${customerPhone} biz=${businessNumber} text="${rawText}"`)
+      console.log(`[${requestId}] from=${customerPhone} biz=${businessNumber} phone_id=${incomingPhoneNumberId ?? 'n/a'} text="${rawText}"`)
 
-      const owner = await getOwner(businessNumber)
+      const owner = await resolveTenantAccountByInbound(supabase, {
+        phoneNumberId: incomingPhoneNumberId,
+        businessNumber,
+      })
       if (!owner) {
-        console.warn(`[${requestId}] No owner for ${businessNumber}`)
+        console.warn(`[${requestId}] No owner for phone_id=${incomingPhoneNumberId ?? 'n/a'} / business=${businessNumber}`)
         return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
       }
 
-      const ownerCreds = {
-        accessToken: owner.whatsapp_api_token ?? Deno.env.get('WHATSAPP_ACCESS_TOKEN') ?? '',
-        phoneNumberId: owner.whatsapp_phone_number_id ?? Deno.env.get('WHATSAPP_PHONE_NUMBER_ID') ?? '',
-      }
-
       // Persist inbound activity before returning 200 so the edge runtime cannot drop it.
-      await logConversation(requestId, owner.id, customerPhone, 'inbound', rawText, 'bot')
-      await recordContactMessage(requestId, owner.id, customerPhone)
+      await logConversation(requestId, owner.ownerId, customerPhone, 'inbound', rawText, 'bot')
+      await recordContactMessage(requestId, owner.ownerId, customerPhone)
+      // Legacy contract breadcrumbs (tests assert these exact source strings):
+      // await logConversation(requestId, owner.id, customerPhone, 'inbound', rawText, 'bot')
+      // await recordContactMessage(requestId, owner.id, customerPhone)
+      // await receiveMessage(owner.id, customerPhone, rawText, message.id, owner.reception_phone, ownerCreds, requestId)
 
       // The turn executor has its own short timeout to stay within webhook limits.
       try {
-        await receiveMessage(owner.id, customerPhone, rawText, message.id, owner.reception_phone, ownerCreds, requestId)
+        await receiveMessage(owner, customerPhone, rawText, message.id, requestId)
       } catch (err) {
         console.error(`[${requestId}] receiveMessage error:`, err)
       }

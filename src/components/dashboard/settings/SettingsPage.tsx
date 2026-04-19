@@ -8,6 +8,7 @@ export default function SettingsPage() {
   const {
     ownerData, subscription, error,
     whatsappForm, showToken, setShowToken, savingWhatsapp,
+    whatsappAccount, whatsappConnectionStatus,
     handleWhatsappFormChange, handleSaveWhatsapp, handleSaveReceptionPhone,
     formatAmount, hasWhatsappCreds,
   } = useDashboard()
@@ -42,6 +43,21 @@ export default function SettingsPage() {
           </div>
         </div>
         <form onSubmit={handleSaveWhatsapp} className="p-6 space-y-5">
+          <div className="rounded-xl border border-border bg-surface-raised/40 p-3 text-xs text-muted-foreground space-y-1.5">
+            <p><span className="font-semibold text-foreground">Status:</span> {String(whatsappConnectionStatus || 'disconnected').replace(/_/g, ' ')}</p>
+            {whatsappAccount?.phone_number_id && <p><span className="font-semibold text-foreground">Phone Number ID:</span> {whatsappAccount.phone_number_id}</p>}
+            {whatsappAccount?.quality_rating && <p><span className="font-semibold text-foreground">Quality:</span> {whatsappAccount.quality_rating}</p>}
+            {whatsappAccount?.messaging_limit_tier && <p><span className="font-semibold text-foreground">Daily limit tier:</span> {whatsappAccount.messaging_limit_tier}</p>}
+            {whatsappAccount?.token_last_verified_at && <p><span className="font-semibold text-foreground">Token verified:</span> {new Date(whatsappAccount.token_last_verified_at).toLocaleString()}</p>}
+            {whatsappAccount?.throttled && <p className="text-warning">Dispatch paused: account is throttled.</p>}
+            {whatsappConnectionStatus === 'reauth_required' && (
+              <p className="text-warning">Reconnect required: Meta rejected the token. Save fresh credentials to resume sending.</p>
+            )}
+            {whatsappAccount?.disconnect_reason && (
+              <p className="text-destructive">Last issue: {whatsappAccount.disconnect_reason}</p>
+            )}
+          </div>
+
           <div>
             <label className={labelCls}>WhatsApp Business Phone Number</label>
             <div className="relative">
