@@ -18,9 +18,10 @@
 ## 3) Queue Backlog / Drain
 
 1. Inspect `whatsapp_outbox` by status and `next_attempt_at`.
-2. Run `process-whatsapp-outbox` with increased `run_seconds`.
-3. Confirm leases are rotating (`locked_by`, `lease_expires_at`).
-4. Investigate high retry reasons in `last_error`.
+2. Confirm cron job `process-whatsapp-outbox-every-minute` exists in `cron.job`.
+3. Run `process-whatsapp-outbox` with backlog drain window `run_seconds=300`.
+4. Confirm leases are rotating (`locked_by`, `lease_expires_at`).
+5. Investigate high retry reasons in `last_error`.
 
 ## 4) Meta API Degradation
 

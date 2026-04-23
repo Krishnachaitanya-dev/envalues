@@ -133,14 +133,6 @@ export function useDashboardData() {
     e.preventDefault(); setSavingWhatsapp(true); setError(null)
     try {
       const validated = whatsappSchema.parse(whatsappForm)
-      const { error } = await supabase.from('owners').update({
-        whatsapp_business_number: validated.whatsapp_business_number,
-        whatsapp_api_token: validated.whatsapp_api_token,
-        whatsapp_phone_number_id: validated.whatsapp_phone_number_id,
-      }).eq('id', user.id)
-      if (error) throw error
-      setOwnerData({ ...ownerData, ...whatsappForm })
-
       const status = validated.whatsapp_api_token && validated.whatsapp_phone_number_id ? 'active' : 'disconnected'
       const nowIso = new Date().toISOString()
       const { error: waError } = await (supabase.from('whatsapp_accounts') as any).upsert({
@@ -156,7 +148,25 @@ export function useDashboardData() {
         throttled: false,
         updated_at: nowIso,
       }, { onConflict: 'owner_id' })
-      if (waError) throw waError
+      if (waError) {
+        const isDuplicatePhoneId =
+          waError.code === '23505' &&
+          (waError.message?.includes('whatsapp_accounts_phone_number_id_unique') ||
+            waError.message?.includes('phone_number_id'))
+        if (isDuplicatePhoneId) {
+          throw new Error('This WhatsApp number is already connected to another account.')
+        }
+        throw waError
+      }
+
+      const { error } = await supabase.from('owners').update({
+        whatsapp_business_number: validated.whatsapp_business_number,
+        whatsapp_api_token: validated.whatsapp_api_token,
+        whatsapp_phone_number_id: validated.whatsapp_phone_number_id,
+      }).eq('id', user.id)
+      if (error) throw error
+
+      setOwnerData({ ...ownerData, ...whatsappForm })
       setWhatsappAccount((prev: any) => ({
         ...(prev ?? {}),
         owner_id: user.id,
@@ -173,7 +183,10 @@ export function useDashboardData() {
       toast({ title: 'WhatsApp configuration saved!' })
     } catch (err: any) {
       if (err instanceof z.ZodError) { toast({ title: 'Validation error', description: err.errors[0].message, variant: 'destructive' }) }
-      else { setError(err.message) }
+      else {
+        setError(err.message)
+        toast({ title: 'Save failed', description: err?.message || 'Could not save WhatsApp settings.', variant: 'destructive' })
+      }
     } finally { setSavingWhatsapp(false) }
   }
 
@@ -389,8 +402,7 @@ export function useDashboardData() {
   }
 
   const formatAmount = (amountInPaise: number) => `Rs.${Math.round(amountInPaise / 100)}`
-  const hasLegacyWhatsappCreds = !!(ownerData?.whatsapp_business_number?.trim() && ownerData?.whatsapp_api_token?.trim() && ownerData?.whatsapp_phone_number_id?.trim())
-  const whatsappConnectionStatus = whatsappAccount?.status || (hasLegacyWhatsappCreds ? 'active' : 'disconnected')
+  const whatsappConnectionStatus = whatsappAccount?.status ?? 'disconnected'
   const hasWhatsappCreds = whatsappConnectionStatus === 'active'
   const canShowPrimaryWhatsappConnectCta = WHATSAPP_CONNECT_STATUSES.includes(whatsappConnectionStatus as typeof WHATSAPP_CONNECT_STATUSES[number])
   const canShowReconnectWhatsappConnectCta = whatsappConnectionStatus === 'active'

@@ -185,16 +185,37 @@ export async function resolveTenantAccountByInbound(
 
   const business = (opts.businessNumber ?? '').replace(/[\s\-\+\(\)]/g, '')
   if (!business) return null
+
+  const logRoutingConflict = async (ownerIds: string[], matchedBusinessNumber: string) => {
+    if (ownerIds.length === 0) return
+    await (supabase.from('whatsapp_account_events') as any).insert(
+      ownerIds.map(ownerId => ({
+        owner_id: ownerId,
+        account_id: null,
+        event_type: 'routing_conflict',
+        message: 'Inbound routing conflict: duplicate business number mapping',
+        metadata: {
+          business_number: matchedBusinessNumber,
+          phone_number_id: opts.phoneNumberId ?? null,
+        },
+      })),
+    )
+  }
+
   for (const num of [business, `+${business}`]) {
-    const { data: owner } = await (supabase
-      .from('owners') as unknown as {
-        select: (columns: string) => { eq: (column: string, value: string) => { maybeSingle: () => Promise<{ data: any }> } }
-      })
+    const { data: owners } = await (supabase
+      .from('owners') as any)
       .select('id')
       .eq('whatsapp_business_number', num)
-      .maybeSingle()
-    if (!owner?.id) continue
-    return resolveTenantAccountByOwnerId(supabase, owner.id)
+      .limit(2)
+
+    if (!owners || owners.length === 0) continue
+    if (owners.length > 1) {
+      await logRoutingConflict(owners.map((o: { id: string }) => o.id), num)
+      return null
+    }
+
+    return resolveTenantAccountByOwnerId(supabase, owners[0].id)
   }
 
   return null
