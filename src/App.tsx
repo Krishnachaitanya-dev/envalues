@@ -10,6 +10,7 @@ import Profile from "./pages/Profile";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import AuthCallback from "./pages/AuthCallback";
+import WhatsAppEmbeddedCallback from "./pages/WhatsAppEmbeddedCallback";
 import NotFound from "./pages/NotFound";
 import DashboardLayout from "./layouts/DashboardLayout";
 import AdminLayout from "./layouts/AdminLayout";
@@ -47,6 +48,7 @@ const App = () => (
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/whatsapp/embedded-callback" element={<WhatsAppEmbeddedCallback />} />
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<OverviewPage />} />
             <Route path="builder" element={<SimpleBuilderPage />} />

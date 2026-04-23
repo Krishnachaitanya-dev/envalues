@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/integrations/supabase/client'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/hooks/use-toast'
@@ -21,6 +21,18 @@ export function sanitizeText(text: string): string {
 
 declare global { interface Window { Razorpay: any } }
 
+type EmbeddedPopupPayload = {
+  state?: string
+  code?: string
+  error?: string
+}
+
+const SUPABASE_FUNCTIONS_BASE = import.meta.env.VITE_SUPABASE_URL || 'https://tbfmturpclqponehhdjq.supabase.co'
+const CONNECT_POPUP_SOURCE = 'whatsapp-embedded-signup'
+const CONNECT_POPUP_WIDTH = 520
+const CONNECT_POPUP_HEIGHT = 760
+const WHATSAPP_CONNECT_STATUSES = ['disconnected', 'reauth_required', 'revoked', 'expired'] as const
+
 export function useDashboardData() {
   const navigate = useNavigate()
   const { toast } = useToast()
@@ -34,6 +46,8 @@ export function useDashboardData() {
   const [savingWhatsapp, setSavingWhatsapp] = useState(false)
   const [flowSummary, setFlowSummary] = useState({ total: 0, published: 0, draft: 0 })
   const [whatsappAccount, setWhatsappAccount] = useState<any>(null)
+  const [connectingWhatsapp, setConnectingWhatsapp] = useState(false)
+  const [whatsappConnectUiState, setWhatsappConnectUiState] = useState<'idle' | 'connecting' | 'awaiting_replace_confirm' | 'connect_failed'>('idle')
 
   // Enterprise / branding
   const [isEnterprise, setIsEnterprise] = useState(false)
@@ -162,6 +176,131 @@ export function useDashboardData() {
     } finally { setSavingWhatsapp(false) }
   }
 
+  const invokeAuthedFunction = async <T>(fnName: string, body: Record<string, unknown>): Promise<T> => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) throw new Error('Please login again to continue')
+
+    const response = await fetch(`${SUPABASE_FUNCTIONS_BASE}/functions/v1/${fnName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      const err = new Error(data?.error || `Request failed (${response.status})`) as Error & {
+        status?: number
+        payload?: Record<string, unknown>
+      }
+      err.status = response.status
+      err.payload = data
+      throw err
+    }
+    return data as T
+  }
+
+  const waitForEmbeddedPopup = async (oauthUrl: string): Promise<{ type: string; payload?: EmbeddedPopupPayload }> => {
+    const left = Math.max(0, window.screenX + (window.outerWidth - CONNECT_POPUP_WIDTH) / 2)
+    const top = Math.max(0, window.screenY + (window.outerHeight - CONNECT_POPUP_HEIGHT) / 2)
+    const popup = window.open(
+      oauthUrl,
+      'whatsapp-embedded-signup',
+      `popup=yes,width=${CONNECT_POPUP_WIDTH},height=${CONNECT_POPUP_HEIGHT},left=${Math.round(left)},top=${Math.round(top)}`,
+    )
+    if (!popup) throw new Error('Popup blocked. Please allow popups and retry.')
+
+    return await new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        cleanup()
+        reject(new Error('Connection timed out. Please retry.'))
+      }, 10 * 60 * 1000)
+
+      const poll = window.setInterval(() => {
+        if (popup.closed) {
+          cleanup()
+          reject(new Error('Connection popup closed before completion.'))
+        }
+      }, 300)
+
+      const onMessage = (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return
+        const data = event.data
+        if (!data || data.source !== CONNECT_POPUP_SOURCE || typeof data.type !== 'string') return
+        cleanup()
+        resolve({ type: data.type, payload: data.payload || {} })
+      }
+
+      const cleanup = () => {
+        window.clearTimeout(timeout)
+        window.clearInterval(poll)
+        window.removeEventListener('message', onMessage)
+      }
+
+      window.addEventListener('message', onMessage)
+    })
+  }
+
+  const completeEmbeddedConnectWithConfirm = async (payload: EmbeddedPopupPayload): Promise<void> => {
+    if (!payload.state || !payload.code) throw new Error('Missing connect confirmation payload')
+    const result = await invokeAuthedFunction<{ ok: boolean }>('whatsapp-embedded-complete', {
+      state: payload.state,
+      code: payload.code,
+      confirm_replace: true,
+    })
+    if (!result?.ok) throw new Error('Unable to finalize WhatsApp reconnect')
+  }
+
+  const handleStartEmbeddedWhatsappConnect = async () => {
+    setConnectingWhatsapp(true)
+    setWhatsappConnectUiState('connecting')
+    try {
+      toast({ title: 'Opening Facebook connect...' })
+      const start = await invokeAuthedFunction<{ oauth_url: string }>('whatsapp-embedded-start', {})
+      if (!start?.oauth_url) throw new Error('Embedded signup URL was not returned')
+
+      const popupEvent = await waitForEmbeddedPopup(start.oauth_url)
+
+      if (popupEvent.type === 'completed') {
+        await checkUser()
+        setWhatsappConnectUiState('idle')
+        toast({ title: 'WhatsApp connected successfully' })
+        return
+      }
+
+      if (popupEvent.type === 'replace_required') {
+        setWhatsappConnectUiState('awaiting_replace_confirm')
+        toast({ title: 'Existing credentials found', description: 'Please confirm replacement to finish connecting.' })
+        const shouldReplace = window.confirm('An existing WhatsApp configuration is already saved for this account. Replace it with the new Facebook connection?')
+        if (!shouldReplace) {
+          setWhatsappConnectUiState('idle')
+          toast({ title: 'Connection cancelled', description: 'Existing WhatsApp credentials were kept.' })
+          return
+        }
+        await completeEmbeddedConnectWithConfirm(popupEvent.payload || {})
+        await checkUser()
+        setWhatsappConnectUiState('idle')
+        toast({ title: 'WhatsApp reconnected successfully' })
+        return
+      }
+
+      if (popupEvent.type === 'error') {
+        throw new Error(popupEvent.payload?.error || 'Facebook connect failed')
+      }
+
+      setWhatsappConnectUiState('idle')
+      toast({ title: 'Connection cancelled', description: 'Facebook connect was cancelled.' })
+    } catch (err: any) {
+      console.error('[whatsapp-embedded-connect] failed:', err)
+      setWhatsappConnectUiState('connect_failed')
+      toast({ title: 'WhatsApp connect failed', description: err?.message || String(err), variant: 'destructive' })
+    } finally {
+      setConnectingWhatsapp(false)
+    }
+  }
+
   const handleSaveReceptionPhone = async (phone: string) => {
     try {
       const cleaned = phone.trim().replace(/\D/g, '')
@@ -209,6 +348,8 @@ export function useDashboardData() {
   const hasLegacyWhatsappCreds = !!(ownerData?.whatsapp_business_number?.trim() && ownerData?.whatsapp_api_token?.trim() && ownerData?.whatsapp_phone_number_id?.trim())
   const whatsappConnectionStatus = whatsappAccount?.status || (hasLegacyWhatsappCreds ? 'active' : 'disconnected')
   const hasWhatsappCreds = whatsappConnectionStatus === 'active'
+  const canShowPrimaryWhatsappConnectCta = WHATSAPP_CONNECT_STATUSES.includes(whatsappConnectionStatus as typeof WHATSAPP_CONNECT_STATUSES[number])
+  const canShowReconnectWhatsappConnectCta = whatsappConnectionStatus === 'active'
 
   const handleGoLive = async () => null
   const handleAddMainQuestion = async (e: React.FormEvent) => { e.preventDefault(); return false }
@@ -221,12 +362,17 @@ export function useDashboardData() {
     user, ownerData, loading, error, setError,
     whatsappForm, showToken, setShowToken,
     savingWhatsapp,
+    connectingWhatsapp,
+    whatsappConnectUiState,
     handleLogout, handleWhatsappFormChange, handleSaveWhatsapp, handleSaveReceptionPhone,
+    handleStartEmbeddedWhatsappConnect,
     subscription,
     handleGoLive, handleCancelSubscription, formatAmount,
     hasWhatsappCreds,
     whatsappAccount,
     whatsappConnectionStatus,
+    canShowPrimaryWhatsappConnectCta,
+    canShowReconnectWhatsappConnectCta,
     flowSummary,
     hasAnyFlow: flowSummary.total > 0,
     hasPublishedFlow: flowSummary.published > 0,

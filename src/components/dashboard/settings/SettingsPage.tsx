@@ -9,6 +9,9 @@ export default function SettingsPage() {
     ownerData, subscription, error,
     whatsappForm, showToken, setShowToken, savingWhatsapp,
     whatsappAccount, whatsappConnectionStatus,
+    connectingWhatsapp, whatsappConnectUiState,
+    canShowPrimaryWhatsappConnectCta, canShowReconnectWhatsappConnectCta,
+    handleStartEmbeddedWhatsappConnect,
     handleWhatsappFormChange, handleSaveWhatsapp, handleSaveReceptionPhone,
     formatAmount, hasWhatsappCreds,
   } = useDashboard()
@@ -43,6 +46,32 @@ export default function SettingsPage() {
           </div>
         </div>
         <form onSubmit={handleSaveWhatsapp} className="p-6 space-y-5">
+          <div className="flex flex-wrap items-center gap-2">
+            {canShowPrimaryWhatsappConnectCta && (
+              <button
+                type="button"
+                onClick={() => void handleStartEmbeddedWhatsappConnect()}
+                disabled={connectingWhatsapp}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              >
+                {connectingWhatsapp ? 'Connecting...' : 'Connect with Facebook'}
+              </button>
+            )}
+            {canShowReconnectWhatsappConnectCta && (
+              <button
+                type="button"
+                onClick={() => void handleStartEmbeddedWhatsappConnect()}
+                disabled={connectingWhatsapp}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-transparent px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-raised disabled:opacity-60"
+              >
+                {connectingWhatsapp ? 'Reconnecting...' : 'Reconnect with Facebook'}
+              </button>
+            )}
+            {whatsappConnectUiState === 'awaiting_replace_confirm' && (
+              <span className="text-[11px] text-warning">Waiting for replace confirmation...</span>
+            )}
+          </div>
+
           <div className="rounded-xl border border-border bg-surface-raised/40 p-3 text-xs text-muted-foreground space-y-1.5">
             <p><span className="font-semibold text-foreground">Status:</span> {String(whatsappConnectionStatus || 'disconnected').replace(/_/g, ' ')}</p>
             {whatsappAccount?.phone_number_id && <p><span className="font-semibold text-foreground">Phone Number ID:</span> {whatsappAccount.phone_number_id}</p>}

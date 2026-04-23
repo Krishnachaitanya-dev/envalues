@@ -54,6 +54,11 @@ export function createMockDashboardContext(overrides: Record<string, unknown> = 
     setShowToken: () => {},
     handleWhatsappFormChange: () => {},
     savingWhatsapp: false,
+    connectingWhatsapp: false,
+    whatsappConnectUiState: 'idle',
+    canShowPrimaryWhatsappConnectCta: true,
+    canShowReconnectWhatsappConnectCta: false,
+    handleStartEmbeddedWhatsappConnect: () => Promise.resolve(),
     goLiveLoading: false,
   }
 }

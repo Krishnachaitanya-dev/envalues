@@ -8,6 +8,9 @@ export default function OverviewPage() {
     ownerData,
     hasWhatsappCreds,
     whatsappConnectionStatus,
+    canShowPrimaryWhatsappConnectCta,
+    connectingWhatsapp,
+    handleStartEmbeddedWhatsappConnect,
     subscription,
     flowSummary,
     hasAnyFlow,
@@ -21,9 +24,15 @@ export default function OverviewPage() {
         ? 'Reconnect required (token expired/revoked)'
         : whatsappConnectionStatus === 'active'
           ? 'Connected and ready'
-          : 'Add phone number & access token',
+          : 'Connect with Facebook to activate WhatsApp',
       done: hasWhatsappCreds,
-      action: () => navigate('/dashboard/settings'),
+      action: () => {
+        if (canShowPrimaryWhatsappConnectCta && !connectingWhatsapp) {
+          void handleStartEmbeddedWhatsappConnect()
+          return
+        }
+        navigate('/dashboard/settings')
+      },
     },
     {
       label: 'Build your first flow',
@@ -68,7 +77,13 @@ export default function OverviewPage() {
               <p className="text-xs text-muted-foreground">{item.desc}</p>
             </div>
             {!item.done && item.action && (
-              <button onClick={item.action} className="text-xs text-primary hover:underline shrink-0">Set up</button>
+              <button
+                onClick={item.action}
+                disabled={item.label === 'Connect WhatsApp' && connectingWhatsapp}
+                className="text-xs text-primary hover:underline shrink-0 disabled:opacity-60"
+              >
+                {item.label === 'Connect WhatsApp' && connectingWhatsapp ? 'Connecting...' : 'Set up'}
+              </button>
             )}
           </div>
         ))}
