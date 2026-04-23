@@ -21,7 +21,7 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 const WHATSAPP_VERIFY_TOKEN = Deno.env.get('WHATSAPP_VERIFY_TOKEN')!
 const CHOOSER_AFTER_MEDIA_DELAY_MS = 2500
-const OUTBOX_FAST_TRIGGER_TIMEOUT_MS = 1200
+const OUTBOX_FAST_TRIGGER_TIMEOUT_MS = 2500
 
 const corsHeaders = getCorsHeaders()
 
