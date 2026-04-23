@@ -177,8 +177,20 @@ export function useDashboardData() {
   }
 
   const invokeAuthedFunction = async <T>(fnName: string, body: Record<string, unknown>): Promise<T> => {
+    // Force a round-trip auth check so stale local sessions don't cause silent 401 loops.
+    const { data: { user }, error: userErr } = await supabase.auth.getUser()
+    if (userErr || !user) {
+      await supabase.auth.signOut()
+      navigate('/login')
+      throw new Error('Session expired. Please login again.')
+    }
+
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) throw new Error('Please login again to continue')
+    if (!session?.access_token) {
+      await supabase.auth.signOut()
+      navigate('/login')
+      throw new Error('Session expired. Please login again.')
+    }
 
     const response = await fetch(`${SUPABASE_FUNCTIONS_BASE}/functions/v1/${fnName}`, {
       method: 'POST',
@@ -191,6 +203,11 @@ export function useDashboardData() {
 
     const data = await response.json().catch(() => ({}))
     if (!response.ok) {
+      if (response.status === 401) {
+        await supabase.auth.signOut()
+        navigate('/login')
+        throw new Error('Session expired. Please login again.')
+      }
       const err = new Error(data?.error || `Request failed (${response.status})`) as Error & {
         status?: number
         payload?: Record<string, unknown>
