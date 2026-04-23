@@ -28,6 +28,7 @@ type EmbeddedPopupPayload = {
 }
 
 const SUPABASE_FUNCTIONS_BASE = import.meta.env.VITE_SUPABASE_URL || 'https://tbfmturpclqponehhdjq.supabase.co'
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiZm10dXJwY2xxcG9uZWhoZGpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5MDExODMsImV4cCI6MjA5MTQ3NzE4M30.PtD8JSfgqh41A_6GpMrbM7mzJ_G4OiKEcGZN3_Fgc34'
 const CONNECT_POPUP_SOURCE = 'whatsapp-embedded-signup'
 const CONNECT_POPUP_WIDTH = 520
 const CONNECT_POPUP_HEIGHT = 760
@@ -205,6 +206,7 @@ export function useDashboardData() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'apikey': SUPABASE_PUBLISHABLE_KEY,
           'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify(body),
