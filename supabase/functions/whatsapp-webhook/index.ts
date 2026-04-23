@@ -21,6 +21,7 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 const WHATSAPP_VERIFY_TOKEN = Deno.env.get('WHATSAPP_VERIFY_TOKEN')!
 const CHOOSER_AFTER_MEDIA_DELAY_MS = 2500
+const OUTBOX_FAST_TRIGGER_TIMEOUT_MS = 1200
 
 const corsHeaders = getCorsHeaders()
 
@@ -167,6 +168,26 @@ async function enqueueOutboxMessage(params: {
     p_available_at: availableAt ?? new Date().toISOString(),
   })
   if (error) throw error
+}
+
+async function triggerOutboxWorkerFast(requestId: string): Promise<void> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), OUTBOX_FAST_TRIGGER_TIMEOUT_MS)
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/process-whatsapp-outbox?run_seconds=15`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      console.warn(`[${requestId}] outbox fast trigger returned ${response.status}`)
+    }
+  } catch (error) {
+    console.warn(`[${requestId}] outbox fast trigger skipped:`, error)
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 function buildTurnDeps(
@@ -320,6 +341,7 @@ async function receiveMessage(
     const newSession = await createSession(ownerId, phone, interrupt)
     const deps = buildTurnDeps(owner, requestId)
     await executeTurn(newSession, text, deps)
+    await triggerOutboxWorkerFast(requestId)
     return
   }
 
@@ -327,6 +349,7 @@ async function receiveMessage(
   if (session?.status === 'active') {
     const deps = buildTurnDeps(owner, requestId)
     await executeTurn(session, text, deps)
+    await triggerOutboxWorkerFast(requestId)
     return
   }
 
@@ -344,12 +367,14 @@ async function receiveMessage(
       idempotencyKey: `${requestId}:${owner.ownerId}:${normalizePhone(phone)}:hint:${crypto.randomUUID()}`,
     })
     await logConversation(requestId, owner.ownerId, phone, 'outbound', "Reply 'hi' to get started.", 'bot')
+    await triggerOutboxWorkerFast(requestId)
     return
   }
 
   const newSession = await createSession(ownerId, phone, trigger)
   const deps = buildTurnDeps(owner, requestId)
   await executeTurn(newSession, text, deps)
+  await triggerOutboxWorkerFast(requestId)
 }
 
 // ── HTTP handler ──────────────────────────────────────────────────────────────

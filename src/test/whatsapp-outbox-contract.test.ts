@@ -46,6 +46,7 @@ describe('whatsapp multi-tenant outbox contract', () => {
     expect(webhook).toContain('const incomingPhoneNumberId: string | null = value.metadata?.phone_number_id ?? null')
     expect(webhook).toContain('resolveTenantAccountByInbound')
     expect(webhook).toContain("await supabase.rpc('enqueue_whatsapp_outbox'")
+    expect(webhook).toContain('process-whatsapp-outbox?run_seconds=15')
     expect(webhook).toContain("const interrupt = session?.status === 'active' ? resolveTrigger(triggers, text)")
   })
 
