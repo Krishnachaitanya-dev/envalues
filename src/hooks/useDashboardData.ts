@@ -177,31 +177,56 @@ export function useDashboardData() {
   }
 
   const invokeAuthedFunction = async <T>(fnName: string, body: Record<string, unknown>): Promise<T> => {
-    // Force a round-trip auth check so stale local sessions don't cause silent 401 loops.
-    const { data: { user }, error: userErr } = await supabase.auth.getUser()
-    if (userErr || !user) {
+    const getFreshAccessToken = async (): Promise<string> => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const expiresSoon = !session?.expires_at || (session.expires_at * 1000) <= (Date.now() + 60_000)
+      if (session?.access_token && !expiresSoon) return session.access_token
+
+      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession()
+      if (!refreshErr && refreshed?.session?.access_token) return refreshed.session.access_token
+
+      const { data: { user }, error: userErr } = await supabase.auth.getUser()
+      if (userErr || !user) {
+        await supabase.auth.signOut()
+        navigate('/login')
+        throw new Error('Session expired. Please login again.')
+      }
+
+      const { data: fallback } = await supabase.auth.getSession()
+      if (fallback?.session?.access_token) return fallback.session.access_token
+
       await supabase.auth.signOut()
       navigate('/login')
       throw new Error('Session expired. Please login again.')
     }
 
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) {
-      await supabase.auth.signOut()
-      navigate('/login')
-      throw new Error('Session expired. Please login again.')
+    const call = async (accessToken: string) => {
+      const response = await fetch(`${SUPABASE_FUNCTIONS_BASE}/functions/v1/${fnName}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(body),
+      })
+      const data = await response.json().catch(() => ({}))
+      return { response, data }
     }
 
-    const response = await fetch(`${SUPABASE_FUNCTIONS_BASE}/functions/v1/${fnName}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify(body),
-    })
+    let accessToken = await getFreshAccessToken()
+    let { response, data } = await call(accessToken)
 
-    const data = await response.json().catch(() => ({}))
+    // Retry once with a freshly rotated token to avoid false-expiry kicks.
+    if (response.status === 401) {
+      const { data: refreshed } = await supabase.auth.refreshSession()
+      if (refreshed?.session?.access_token) {
+        accessToken = refreshed.session.access_token
+        const retry = await call(accessToken)
+        response = retry.response
+        data = retry.data
+      }
+    }
+
     if (!response.ok) {
       if (response.status === 401) {
         await supabase.auth.signOut()

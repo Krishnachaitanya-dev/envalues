@@ -53,19 +53,29 @@ export default function WhatsAppEmbeddedCallback() {
         return
       }
 
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
+      const resolveAccessToken = async (): Promise<string> => {
+        const { data: { session } } = await supabase.auth.getSession()
+        const expiresSoon = !session?.expires_at || (session.expires_at * 1000) <= (Date.now() + 60_000)
+        if (session?.access_token && !expiresSoon) return session.access_token
+
+        const { data: refreshed } = await supabase.auth.refreshSession()
+        if (refreshed?.session?.access_token) return refreshed.session.access_token
+        throw new Error('Session expired. Please login again.')
+      }
+
+      let accessToken = await resolveAccessToken()
+      if (!accessToken) {
         setStatus('error')
         setMessage('Session expired. Please login and reconnect.')
         postToParent('error', { error: 'Missing auth session' })
         return
       }
 
-      const response = await fetch(`${SUPABASE_FUNCTIONS_BASE}/functions/v1/whatsapp-embedded-complete`, {
+      let response = await fetch(`${SUPABASE_FUNCTIONS_BASE}/functions/v1/whatsapp-embedded-complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           state: params.state,
@@ -74,7 +84,28 @@ export default function WhatsAppEmbeddedCallback() {
           error_description: params.errorDescription || undefined,
         }),
       })
-      const data = await response.json().catch(() => ({}))
+      let data = await response.json().catch(() => ({}))
+
+      if (response.status === 401) {
+        const { data: refreshed } = await supabase.auth.refreshSession()
+        if (refreshed?.session?.access_token) {
+          accessToken = refreshed.session.access_token
+          response = await fetch(`${SUPABASE_FUNCTIONS_BASE}/functions/v1/whatsapp-embedded-complete`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({
+              state: params.state,
+              code: params.code,
+              error: params.error || undefined,
+              error_description: params.errorDescription || undefined,
+            }),
+          })
+          data = await response.json().catch(() => ({}))
+        }
+      }
 
       if (response.status === 409 && data?.error_code === 'replace_confirmation_required') {
         setStatus('replace_required')
