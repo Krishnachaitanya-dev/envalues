@@ -62,6 +62,36 @@ async function exchangeCodeForToken(code: string): Promise<string> {
   return data.access_token as string
 }
 
+async function getWabaIdsFromToken(accessToken: string): Promise<string[]> {
+  // debug_token returns granular_scopes which contains WABA IDs the user granted
+  // during Embedded Signup — works with APP_ID|APP_SECRET, no user permissions needed.
+  const appToken = `${META_APP_ID}|${META_APP_SECRET}`
+  const url = new URL(`${META_GRAPH_BASE}/debug_token`)
+  url.searchParams.set('input_token', accessToken)
+  url.searchParams.set('access_token', appToken)
+
+  const response = await fetch(url.toString())
+  const raw = await response.text()
+  let data: any = null
+  try { data = raw ? JSON.parse(raw) : null } catch { data = null }
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message || `debug_token failed (${response.status})`)
+  }
+
+  const wabaIds = new Set<string>()
+  const granularScopes: Array<{ scope: string; target_ids?: string[] }> = data?.data?.granular_scopes ?? []
+  for (const entry of granularScopes) {
+    if (
+      entry.scope === 'whatsapp_business_management' ||
+      entry.scope === 'whatsapp_business_messaging'
+    ) {
+      for (const id of (entry.target_ids ?? [])) wabaIds.add(id)
+    }
+  }
+  return [...wabaIds]
+}
+
 async function findBusinessAsset(accessToken: string): Promise<{
   businessId: string | null
   businessName: string | null
@@ -71,52 +101,62 @@ async function findBusinessAsset(accessToken: string): Promise<{
   businessNumber: string | null
   displayName: string | null
 }> {
-  const businessesRes = await fetchMetaJson('me/businesses', accessToken, {
-    fields: 'id,name',
-    limit: '25',
-  })
-  const businesses = (businessesRes?.data ?? []) as MetaBusiness[]
+  // Step 1: get WABA IDs from debug_token granular_scopes.
+  // This works without business_management permission.
+  const wabaIds = await getWabaIdsFromToken(accessToken)
 
-  for (const business of businesses) {
-    const wabasRes = await fetchMetaJson(`${business.id}/owned_whatsapp_business_accounts`, accessToken, {
-      fields: 'id,name,phone_numbers{id,display_phone_number,verified_name}',
-      limit: '25',
-    })
-    const wabas = (wabasRes?.data ?? []) as MetaWaba[]
-    for (const waba of wabas) {
+  for (const wabaId of wabaIds) {
+    try {
+      const waba = await fetchMetaJson(wabaId, accessToken, {
+        fields: 'id,name,phone_numbers{id,display_phone_number,verified_name}',
+      }) as MetaWaba
       const phones = unwrapDataArray<MetaPhone>(waba.phone_numbers)
       const phone = phones.find(p => !!p?.id)
       if (!phone?.id) continue
       return {
-        businessId: business.id,
-        businessName: business.name ?? null,
+        businessId: null,
+        businessName: null,
         wabaId: waba.id,
         wabaName: waba.name ?? null,
         phoneNumberId: phone.id,
         businessNumber: normalizeBusinessNumber(phone.display_phone_number),
         displayName: phone.verified_name ?? null,
       }
+    } catch (err: any) {
+      console.warn(`[whatsapp-embedded-complete] WABA ${wabaId} lookup failed:`, err?.message)
     }
   }
 
-  const ownedWabasRes = await fetchMetaJson('me/owned_whatsapp_business_accounts', accessToken, {
-    fields: 'id,name,phone_numbers{id,display_phone_number,verified_name}',
-    limit: '25',
-  })
-  const ownedWabas = (ownedWabasRes?.data ?? []) as MetaWaba[]
-  for (const waba of ownedWabas) {
-    const phones = unwrapDataArray<MetaPhone>(waba.phone_numbers)
-    const phone = phones.find(p => !!p?.id)
-    if (!phone?.id) continue
-    return {
-      businessId: null,
-      businessName: null,
-      wabaId: waba.id,
-      wabaName: waba.name ?? null,
-      phoneNumberId: phone.id,
-      businessNumber: normalizeBusinessNumber(phone.display_phone_number),
-      displayName: phone.verified_name ?? null,
+  // Step 2: fallback — try me/businesses if business_management was granted.
+  try {
+    const businessesRes = await fetchMetaJson('me/businesses', accessToken, {
+      fields: 'id,name',
+      limit: '25',
+    })
+    const businesses = (businessesRes?.data ?? []) as MetaBusiness[]
+    for (const business of businesses) {
+      const wabasRes = await fetchMetaJson(`${business.id}/owned_whatsapp_business_accounts`, accessToken, {
+        fields: 'id,name,phone_numbers{id,display_phone_number,verified_name}',
+        limit: '25',
+      })
+      const wabas = (wabasRes?.data ?? []) as MetaWaba[]
+      for (const waba of wabas) {
+        const phones = unwrapDataArray<MetaPhone>(waba.phone_numbers)
+        const phone = phones.find(p => !!p?.id)
+        if (!phone?.id) continue
+        return {
+          businessId: business.id,
+          businessName: business.name ?? null,
+          wabaId: waba.id,
+          wabaName: waba.name ?? null,
+          phoneNumberId: phone.id,
+          businessNumber: normalizeBusinessNumber(phone.display_phone_number),
+          displayName: phone.verified_name ?? null,
+        }
+      }
     }
+  } catch (err: any) {
+    console.warn('[whatsapp-embedded-complete] me/businesses fallback failed:', err?.message)
   }
 
   throw new Error('No WhatsApp Business Account with phone number found for this login')
